@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TW Farm + Tagger — ThCarmo
 // @namespace    https://github.com/ThCarmo/tribal-wars-userscript
-// @version      0.2.4
+// @version      0.2.5
 // @description  Farm (2L+1S, raio configurável) + Incoming Tagger (classifica tropa por velocidade)
 // @author       Thiago Carmo
 // @match        *://*.tribalwars.com.br/*
@@ -13,11 +13,11 @@
 // @downloadURL  https://raw.githubusercontent.com/ThCarmo/tribal-wars-userscript/main/src/tw-farm.user.js
 // ==/UserScript==
 
-// ===== INJEÇÃO MAIN WORLD (v0.2.4) =====
+// ===== INJEÇÃO MAIN WORLD (v0.2.5) =====
 // Tampermonkey 5.5 stable ignora @inject-into page. Workaround clássico:
 // criar um <script> tag com o código real, anexar ao DOM, o browser executa
 // no MAIN WORLD (mesmo contexto que o DevTools console). Funciona em qualquer TM.
-console.log('[TW-FARM] stub carregado v0.2.4 — injetando main world script');
+console.log('[TW-FARM] stub carregado v0.2.5 — injetando main world script');
 (function injectMainWorldScript() {
     function mainWorldScript() {
         'use strict';
@@ -32,7 +32,7 @@ console.log('[TW-FARM] stub carregado v0.2.4 — injetando main world script');
             const b = document.createElement('div');
             b.id = 'tw-farm-banner-prova';
             b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#d40000;color:#fff;padding:12px;font:bold 14px Arial;text-align:center;border-bottom:3px solid #000;box-shadow:0 2px 10px rgba(0,0,0,0.6);';
-            b.innerHTML = `✅ TW Farm userscript v0.2.4 ATIVO (script-tag bridge) — URL: ${location.href.slice(0, 80)} <span style="margin-left:20px;cursor:pointer;text-decoration:underline;" id="tw-farm-banner-close">[fechar]</span>`;
+            b.innerHTML = `✅ TW Farm userscript v0.2.5 ATIVO (script-tag bridge) — URL: ${location.href.slice(0, 80)} <span style="margin-left:20px;cursor:pointer;text-decoration:underline;" id="tw-farm-banner-close">[fechar]</span>`;
             (document.body || document.documentElement).insertAdjacentElement('afterbegin', b);
             document.getElementById('tw-farm-banner-close').onclick = () => b.remove();
         };
@@ -41,7 +41,7 @@ console.log('[TW-FARM] stub carregado v0.2.4 — injetando main world script');
         } else {
             document.addEventListener('DOMContentLoaded', showBanner);
         }
-        console.log('[TW-FARM] v0.2.4 carregado (script-tag bridge, main world) em', location.href);
+        console.log('[TW-FARM] v0.2.5 carregado (script-tag bridge, main world) em', location.href);
     } catch (e) {
         console.error('[TW-FARM] banner-prova falhou:', e);
     }
@@ -137,20 +137,7 @@ console.log('[TW-FARM] stub carregado v0.2.4 — injetando main world script');
         const targets = [];
 
         rows.forEach(row => {
-            const targetLink = row.querySelector('a[href*="info_village.php"], a[href*="screen=info_village"]');
-            if (!targetLink) return;
-
-            const idMatch = targetLink.href.match(/[?&]id=(\d+)/);
-            if (!idMatch) return;
-            const targetId = idMatch[1];
-
-            const coordMatch = (targetLink.textContent + ' ' + targetLink.title).match(/\((\d{1,4})\|(\d{1,4})\)/);
-            if (!coordMatch) return;
-            const tx = parseInt(coordMatch[1], 10);
-            const ty = parseInt(coordMatch[2], 10);
-            const dist = distance(sourceX, sourceY, tx, ty);
-            if (dist > CFG.radiusMax) return;
-
+            // botão A é o sinal mais confiável que é uma row de alvo (não header/footer)
             const buttonA =
                 row.querySelector('a.farm_icon_a') ||
                 row.querySelector('a[onclick*="farmA"]') ||
@@ -158,6 +145,36 @@ console.log('[TW-FARM] stub carregado v0.2.4 — injetando main world script');
                 row.querySelector('a.farm_icon[data-template="a"]') ||
                 row.querySelector('.farm-icon-a');
             if (!buttonA) return;
+
+            // targetId: tenta link info_village; fallback classe farm_village_<id> do botão A
+            let targetId = null;
+            const targetLink = row.querySelector('a[href*="info_village.php"], a[href*="screen=info_village"]');
+            if (targetLink) {
+                const m = targetLink.href.match(/[?&]id=(\d+)/);
+                if (m) targetId = m[1];
+            }
+            if (!targetId) {
+                const m = (buttonA.className || '').match(/farm_village_(\d+)/);
+                if (m) targetId = m[1];
+            }
+            if (!targetId) return;
+
+            // coordenadas: no BR142 não vêm no link, mas vêm em alguma <td> da linha.
+            // Vasculha todas as células e o innerText completo.
+            let tx = null, ty = null;
+            const cells = row.querySelectorAll('td');
+            for (const td of cells) {
+                const m = (td.textContent || '').match(/\((\d{1,4})\|(\d{1,4})\)/);
+                if (m) { tx = parseInt(m[1], 10); ty = parseInt(m[2], 10); break; }
+            }
+            if (tx == null) {
+                const m = (row.innerText || row.textContent || '').match(/\((\d{1,4})\|(\d{1,4})\)/);
+                if (m) { tx = parseInt(m[1], 10); ty = parseInt(m[2], 10); }
+            }
+            if (tx == null) return;
+
+            const dist = distance(sourceX, sourceY, tx, ty);
+            if (dist > CFG.radiusMax) return;
 
             targets.push({ id: targetId, x: tx, y: ty, dist, buttonA });
         });
