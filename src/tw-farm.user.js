@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TW Farm + Tagger — ThCarmo
 // @namespace    https://github.com/ThCarmo/tribal-wars-userscript
-// @version      0.2.3
+// @version      0.2.4
 // @description  Farm (2L+1S, raio configurável) + Incoming Tagger (classifica tropa por velocidade)
 // @author       Thiago Carmo
 // @match        *://*.tribalwars.com.br/*
@@ -9,13 +9,18 @@
 // @match        *://*.die-staemme.de/*
 // @grant        none
 // @run-at       document-idle
-// @inject-into  page
 // @updateURL    https://raw.githubusercontent.com/ThCarmo/tribal-wars-userscript/main/src/tw-farm.user.js
 // @downloadURL  https://raw.githubusercontent.com/ThCarmo/tribal-wars-userscript/main/src/tw-farm.user.js
 // ==/UserScript==
 
-(function () {
-    'use strict';
+// ===== INJEÇÃO MAIN WORLD (v0.2.4) =====
+// Tampermonkey 5.5 stable ignora @inject-into page. Workaround clássico:
+// criar um <script> tag com o código real, anexar ao DOM, o browser executa
+// no MAIN WORLD (mesmo contexto que o DevTools console). Funciona em qualquer TM.
+console.log('[TW-FARM] stub carregado v0.2.4 — injetando main world script');
+(function injectMainWorldScript() {
+    function mainWorldScript() {
+        'use strict';
 
     // ===== BANNER DE PROVA DE VIDA (v0.2.2) =====
     // Aparece NO TOPO da página antes de qualquer outra coisa.
@@ -27,7 +32,7 @@
             const b = document.createElement('div');
             b.id = 'tw-farm-banner-prova';
             b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#d40000;color:#fff;padding:12px;font:bold 14px Arial;text-align:center;border-bottom:3px solid #000;box-shadow:0 2px 10px rgba(0,0,0,0.6);';
-            b.innerHTML = `✅ TW Farm userscript v0.2.3 ATIVO (main world) — URL: ${location.href.slice(0, 80)} <span style="margin-left:20px;cursor:pointer;text-decoration:underline;" id="tw-farm-banner-close">[fechar]</span>`;
+            b.innerHTML = `✅ TW Farm userscript v0.2.4 ATIVO (script-tag bridge) — URL: ${location.href.slice(0, 80)} <span style="margin-left:20px;cursor:pointer;text-decoration:underline;" id="tw-farm-banner-close">[fechar]</span>`;
             (document.body || document.documentElement).insertAdjacentElement('afterbegin', b);
             document.getElementById('tw-farm-banner-close').onclick = () => b.remove();
         };
@@ -36,7 +41,7 @@
         } else {
             document.addEventListener('DOMContentLoaded', showBanner);
         }
-        console.log('[TW-FARM] v0.2.3 carregado (main world) em', location.href);
+        console.log('[TW-FARM] v0.2.4 carregado (script-tag bridge, main world) em', location.href);
     } catch (e) {
         console.error('[TW-FARM] banner-prova falhou:', e);
     }
@@ -588,4 +593,13 @@
     } else {
         init();
     }
+    }
+
+    const code = '(' + mainWorldScript.toString() + ')();';
+    const s = document.createElement('script');
+    s.type = 'text/javascript';
+    s.textContent = code;
+    (document.head || document.documentElement).appendChild(s);
+    s.remove();
+    console.log('[TW-FARM] script tag injetado, total bytes:', code.length);
 })();
