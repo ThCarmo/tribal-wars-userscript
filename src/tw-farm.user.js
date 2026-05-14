@@ -1,16 +1,15 @@
 // ==UserScript==
 // @name         TW Farm + Tagger — ThCarmo
 // @namespace    https://github.com/ThCarmo/tribal-wars-userscript
-// @version      0.2.2
+// @version      0.2.3
 // @description  Farm (2L+1S, raio configurável) + Incoming Tagger (classifica tropa por velocidade)
 // @author       Thiago Carmo
 // @match        *://*.tribalwars.com.br/*
 // @match        *://*.tribalwars.com.pt/*
 // @match        *://*.die-staemme.de/*
-// @grant        GM_setValue
-// @grant        GM_getValue
-// @grant        unsafeWindow
+// @grant        none
 // @run-at       document-idle
+// @inject-into  page
 // @updateURL    https://raw.githubusercontent.com/ThCarmo/tribal-wars-userscript/main/src/tw-farm.user.js
 // @downloadURL  https://raw.githubusercontent.com/ThCarmo/tribal-wars-userscript/main/src/tw-farm.user.js
 // ==/UserScript==
@@ -28,7 +27,7 @@
             const b = document.createElement('div');
             b.id = 'tw-farm-banner-prova';
             b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#d40000;color:#fff;padding:12px;font:bold 14px Arial;text-align:center;border-bottom:3px solid #000;box-shadow:0 2px 10px rgba(0,0,0,0.6);';
-            b.innerHTML = `✅ TW Farm userscript v0.2.2 ATIVO — URL: ${location.href.slice(0, 80)} <span style="margin-left:20px;cursor:pointer;text-decoration:underline;" id="tw-farm-banner-close">[fechar]</span>`;
+            b.innerHTML = `✅ TW Farm userscript v0.2.3 ATIVO (main world) — URL: ${location.href.slice(0, 80)} <span style="margin-left:20px;cursor:pointer;text-decoration:underline;" id="tw-farm-banner-close">[fechar]</span>`;
             (document.body || document.documentElement).insertAdjacentElement('afterbegin', b);
             document.getElementById('tw-farm-banner-close').onclick = () => b.remove();
         };
@@ -37,7 +36,7 @@
         } else {
             document.addEventListener('DOMContentLoaded', showBanner);
         }
-        console.log('[TW-FARM] v0.2.2 carregado em', location.href);
+        console.log('[TW-FARM] v0.2.3 carregado (main world) em', location.href);
     } catch (e) {
         console.error('[TW-FARM] banner-prova falhou:', e);
     }
@@ -62,19 +61,28 @@
         },
     };
 
+    const LS_KEY = 'twFarmLastFarmByTarget';
+    function lsGet(key, fallback) {
+        try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }
+        catch (e) { return fallback; }
+    }
+    function lsSet(key, value) {
+        try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
+    }
+
     const STATE = {
         running: false,
         sent: 0,
         errors: 0,
         lastError: '-',
         nextTarget: '-',
-        lastFarmByTarget: GM_getValue('lastFarmByTarget', {}),
+        lastFarmByTarget: lsGet(LS_KEY, {}),
         troopsAtHome: { light: 0, spy: 0 },
         taggerRunning: false,
         taggerProgress: 'ocioso',
     };
 
-    const w = unsafeWindow;
+    const w = window;
     const log = (...args) => CFG.debugLog && console.log('%c[TW-FARM]', 'color:#603000;font-weight:bold', ...args);
     const sleep = ms => new Promise(r => setTimeout(r, ms));
     const jitter = () => Math.floor(CFG.jitterMs[0] + Math.random() * (CFG.jitterMs[1] - CFG.jitterMs[0]));
@@ -94,7 +102,7 @@
 
     function persistFarmRecord(targetId) {
         STATE.lastFarmByTarget[targetId] = serverTime();
-        GM_setValue('lastFarmByTarget', STATE.lastFarmByTarget);
+        lsSet(LS_KEY, STATE.lastFarmByTarget);
     }
 
     function isOnCooldown(targetId) {
