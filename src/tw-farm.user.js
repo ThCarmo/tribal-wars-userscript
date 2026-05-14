@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TW Farm + Tagger — ThCarmo
 // @namespace    https://github.com/ThCarmo/tribal-wars-userscript
-// @version      0.3.1
+// @version      0.3.2
 // @description  Farm (2L+1S, raio configurável) + Incoming Tagger (classifica tropa por velocidade)
 // @author       Thiago Carmo
 // @match        *://*.tribalwars.com.br/*
@@ -13,11 +13,11 @@
 // @downloadURL  https://raw.githubusercontent.com/ThCarmo/tribal-wars-userscript/main/src/tw-farm.user.js
 // ==/UserScript==
 
-// ===== INJEÇÃO MAIN WORLD (v0.3.1) =====
+// ===== INJEÇÃO MAIN WORLD (v0.3.2) =====
 // Tampermonkey 5.5 stable ignora @inject-into page. Workaround clássico:
 // criar um <script> tag com o código real, anexar ao DOM, o browser executa
 // no MAIN WORLD (mesmo contexto que o DevTools console). Funciona em qualquer TM.
-console.log('[TW-FARM] stub carregado v0.3.1 — injetando main world script');
+console.log('[TW-FARM] stub carregado v0.3.2 — injetando main world script');
 (function injectMainWorldScript() {
     function mainWorldScript() {
         'use strict';
@@ -32,7 +32,7 @@ console.log('[TW-FARM] stub carregado v0.3.1 — injetando main world script');
             const b = document.createElement('div');
             b.id = 'tw-farm-banner-prova';
             b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#d40000;color:#fff;padding:12px;font:bold 14px Arial;text-align:center;border-bottom:3px solid #000;box-shadow:0 2px 10px rgba(0,0,0,0.6);';
-            b.innerHTML = `✅ TW Farm userscript v0.3.1 ATIVO (Praça sender beta) — URL: ${location.href.slice(0, 80)} <span style="margin-left:20px;cursor:pointer;text-decoration:underline;" id="tw-farm-banner-close">[fechar]</span>`;
+            b.innerHTML = `✅ TW Farm userscript v0.3.2 ATIVO (Atacar Todos) — URL: ${location.href.slice(0, 80)} <span style="margin-left:20px;cursor:pointer;text-decoration:underline;" id="tw-farm-banner-close">[fechar]</span>`;
             (document.body || document.documentElement).insertAdjacentElement('afterbegin', b);
             document.getElementById('tw-farm-banner-close').onclick = () => b.remove();
         };
@@ -41,7 +41,7 @@ console.log('[TW-FARM] stub carregado v0.3.1 — injetando main world script');
         } else {
             document.addEventListener('DOMContentLoaded', showBanner);
         }
-        console.log('[TW-FARM] v0.3.1 carregado (script-tag bridge, main world) em', location.href);
+        console.log('[TW-FARM] v0.3.2 carregado (script-tag bridge, main world) em', location.href);
     } catch (e) {
         console.error('[TW-FARM] banner-prova falhou:', e);
     }
@@ -641,6 +641,83 @@ console.log('[TW-FARM] stub carregado v0.3.1 — injetando main world script');
         return { ok: false, error: 'step3 resposta ambígua', rawSample: html3.slice(0, 300) };
     }
 
+    // ============ ATACAR TODOS (loop em cima do scan) ============
+    // Itera barbáros do último scan, dispara 2L+1S em cada via sendFarmViaPlace().
+    // Reaproveita guard-rails do farm: cooldown, CL<2, captcha, erro do servidor.
+
+    async function mapScanFarmAll() {
+        const barbs = STATE.mapScanLast && STATE.mapScanLast.barbs;
+        if (!barbs || barbs.length === 0) {
+            STATE.mapScanProgress = 'rode 🔍 Buscar Barbs primeiro';
+            updatePanel(null);
+            return;
+        }
+
+        STATE.mapScanRunning = true;
+        let attempted = 0, sent = 0, skippedCooldown = 0, errors = 0;
+        log(`Map farm: iniciando sobre ${barbs.length} alvos`);
+
+        for (const b of barbs) {
+            if (!STATE.mapScanRunning) {
+                STATE.lastError = 'parado manualmente';
+                break;
+            }
+            if (captchaActive()) {
+                STATE.lastError = 'captcha detectado, parando';
+                STATE.mapScanRunning = false;
+                break;
+            }
+            if (STATE.troopsAtHome.light < 2 || STATE.troopsAtHome.spy < 1) {
+                STATE.lastError = `estoque baixo: ${STATE.troopsAtHome.light}CL / ${STATE.troopsAtHome.spy}spy`;
+                STATE.mapScanRunning = false;
+                break;
+            }
+            if (isOnCooldown(b.id)) {
+                skippedCooldown++;
+                continue;
+            }
+
+            attempted++;
+            STATE.nextTarget = `(${b.x}|${b.y}) ${b.dist.toFixed(1)}c`;
+            STATE.mapScanProgress = `${sent} enviados / ${attempted} tentativas, alvo ${STATE.nextTarget}`;
+            updatePanel(STATE.mapScanProgress);
+
+            const res = await sendFarmViaPlace(b.id, 2, 1, false);
+
+            if (res.ok) {
+                sent++;
+                STATE.sent++;
+                STATE.troopsAtHome.light -= 2;
+                STATE.troopsAtHome.spy -= 1;
+                STATE.lastFarmByTarget[b.id] = serverTime();
+                lsSet(LS_KEY, STATE.lastFarmByTarget);
+                log(`Map farm #${sent}: (${b.x}|${b.y}) ok, estoque ${STATE.troopsAtHome.light}CL/${STATE.troopsAtHome.spy}spy`);
+            } else {
+                errors++;
+                STATE.errors++;
+                STATE.lastError = res.error || 'erro desconhecido';
+                log(`Map farm erro em (${b.x}|${b.y}) id ${b.id}:`, res.error);
+                if (/captcha|bot|provis|proteç|protect/i.test(res.error || '')) {
+                    STATE.lastError = 'servidor sinalizou bot/captcha — parando';
+                    STATE.mapScanRunning = false;
+                    break;
+                }
+                if (errors >= 5 && sent === 0) {
+                    STATE.lastError = '5 erros sem 1 sucesso — abortando pra investigar';
+                    STATE.mapScanRunning = false;
+                    break;
+                }
+            }
+
+            await sleep(jitter());
+        }
+
+        STATE.mapScanRunning = false;
+        STATE.mapScanProgress = `parado: ${sent} enviados, ${errors} erros, ${skippedCooldown} em cooldown`;
+        updatePanel(STATE.mapScanProgress);
+        log('Map farm finalizado:', STATE.mapScanProgress);
+    }
+
     function injectPanel() {
         if (document.getElementById('tw-farm-panel')) return;
         const panel = document.createElement('div');
@@ -682,8 +759,12 @@ console.log('[TW-FARM] stub carregado v0.3.1 — injetando main world script');
     <button id="tw-map-dryrun" style="flex:1;background:#a07000;color:white;border:none;padding:4px;cursor:pointer;font-size:10px;border-radius:2px;">🧪 Testar 1 (dry-run)</button>
     <button id="tw-map-real1" style="flex:1;background:#7a1f1f;color:white;border:none;padding:4px;cursor:pointer;font-size:10px;border-radius:2px;">🎯 Atacar 1 (REAL)</button>
   </div>
+  <div style="display:flex;gap:4px;margin-bottom:4px;">
+    <button id="tw-map-attack-all" style="flex:1;background:#7a1f1f;color:white;border:none;padding:5px;cursor:pointer;font-weight:bold;border-radius:2px;">💥 ATACAR TODOS</button>
+    <button id="tw-map-stop-all" style="flex:1;background:#444;color:white;border:none;padding:5px;cursor:pointer;font-weight:bold;border-radius:2px;">■ PARAR</button>
+  </div>
   <div style="font-size:10px;">Status: <span id="tw-map-status">ocioso</span></div>
-  <div style="font-size:9px;color:#888;">Dry-run mostra o que SERIA enviado, sem disparar. Atacar 1 manda 2L+1S na barbára mais próxima.</div>
+  <div style="font-size:9px;color:#888;">Atacar Todos itera sobre o scan, 2L+1S em cada, jitter 3-7s, para em CL&lt;2 / captcha / erro.</div>
 
   <hr style="border:none;border-top:1px solid #603000;margin:8px 0 6px;">
 
@@ -745,6 +826,46 @@ console.log('[TW-FARM] stub carregado v0.3.1 — injetando main world script');
             } else {
                 document.getElementById('tw-map-status').textContent = `dry-run FALHOU: ${res.error}`;
             }
+        };
+
+        document.getElementById('tw-map-attack-all').onclick = async () => {
+            if (STATE.mapScanRunning) {
+                document.getElementById('tw-map-status').textContent = 'já está rodando';
+                return;
+            }
+            const barbs = STATE.mapScanLast && STATE.mapScanLast.barbs;
+            if (!barbs || barbs.length === 0) {
+                document.getElementById('tw-map-status').textContent = 'rode 🔍 Buscar Barbs primeiro';
+                return;
+            }
+            // Aplica configs atuais do painel
+            CFG.radiusMax = parseInt(document.getElementById('tw-farm-radius').value, 10) || 35;
+            CFG.cooldownMin = parseInt(document.getElementById('tw-farm-cd').value, 10) || 30;
+            const jmin = parseInt(document.getElementById('tw-farm-jmin').value, 10) || 3000;
+            const jmax = parseInt(document.getElementById('tw-farm-jmax').value, 10) || 7000;
+            CFG.jitterMs = [Math.min(jmin, jmax), Math.max(jmin, jmax)];
+            STATE.troopsAtHome.light = parseInt(document.getElementById('tw-farm-light').value, 10) || 0;
+            STATE.troopsAtHome.spy = parseInt(document.getElementById('tw-farm-spy').value, 10) || 0;
+
+            const maxAtaques = Math.floor(Math.min(STATE.troopsAtHome.light / 2, STATE.troopsAtHome.spy));
+            const confirmAll = window.confirm(
+                `ATACAR TODOS:\n\n` +
+                `${barbs.length} barbáros no scan (raio ${STATE.mapScanLast.atRadius})\n` +
+                `Estoque: ${STATE.troopsAtHome.light}CL / ${STATE.troopsAtHome.spy}spy\n` +
+                `Máx ataques possíveis: ${maxAtaques}\n` +
+                `Jitter: ${CFG.jitterMs[0]}-${CFG.jitterMs[1]}ms\n` +
+                `Cooldown: ${CFG.cooldownMin}min\n\n` +
+                `Para em CL<2, captcha, ou 5 erros sem 1 sucesso. Confirma?`
+            );
+            if (!confirmAll) {
+                document.getElementById('tw-map-status').textContent = 'cancelado pelo operador';
+                return;
+            }
+            mapScanFarmAll();
+        };
+        document.getElementById('tw-map-stop-all').onclick = () => {
+            STATE.mapScanRunning = false;
+            document.getElementById('tw-map-status').textContent = 'parando após farm atual...';
         };
 
         document.getElementById('tw-map-real1').onclick = async () => {
