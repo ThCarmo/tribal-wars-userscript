@@ -1,15 +1,16 @@
 // ==UserScript==
 // @name         TW Farm + Tagger — ThCarmo
 // @namespace    https://github.com/ThCarmo/tribal-wars-userscript
-// @version      0.2.0
+// @version      0.2.1
 // @description  Farm (2L+1S, raio configurável) + Incoming Tagger (classifica tropa por velocidade)
 // @author       Thiago Carmo
-// @match        https://*.tribalwars.com.br/game.php*
-// @match        https://br*.tribalwars.com.br/game.php*
+// @match        *://*.tribalwars.com.br/*
+// @match        *://*.tribalwars.com.pt/*
+// @match        *://*.die-staemme.de/*
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        unsafeWindow
-// @run-at       document-end
+// @run-at       document-idle
 // @updateURL    https://raw.githubusercontent.com/ThCarmo/tribal-wars-userscript/main/src/tw-farm.user.js
 // @downloadURL  https://raw.githubusercontent.com/ThCarmo/tribal-wars-userscript/main/src/tw-farm.user.js
 // ==/UserScript==
@@ -506,18 +507,48 @@
         if ($('tw-tagger-status')) $('tw-tagger-status').textContent = STATE.taggerProgress;
     }
 
-    function init() {
-        const gd = getGameData();
-        if (!gd) {
-            console.warn('[TW-FARM] game_data não disponível. Userscript não vai rodar nesta tela.');
+    async function waitForGameData(maxMs = 8000) {
+        const start = Date.now();
+        while (Date.now() - start < maxMs) {
+            if (getGameData()) return true;
+            await sleep(200);
+        }
+        return false;
+    }
+
+    async function init() {
+        console.log('[TW-FARM] init() v0.2.1 — URL:', location.href, 'readyState:', document.readyState);
+
+        // Painel sempre aparece, com aviso se faltar contexto.
+        try {
+            injectPanel();
+        } catch (e) {
+            console.error('[TW-FARM] Falhou ao injetar painel:', e);
             return;
         }
+
+        const gotData = await waitForGameData();
+        const gd = getGameData();
+
+        if (!gotData || !gd) {
+            updatePanel('aguardando jogo carregar... (recarregue a página se persistir)');
+            console.warn('[TW-FARM] game_data não populado após 8s. URL:', location.href);
+            // Continua tentando em background
+            const retry = setInterval(() => {
+                if (getGameData()) {
+                    clearInterval(retry);
+                    const gd2 = getGameData();
+                    log('game_data chegou (tardio). World:', gd2.world, 'Player:', gd2.player?.name);
+                    syncTroopsAtHome();
+                    updatePanel(isOnAmFarmScreen() ? 'pronto — clique START' : 'abra "Assistente de Saque"');
+                }
+            }, 1000);
+            return;
+        }
+
         log('Carregado. World:', gd.world, 'Player:', gd.player?.name, 'Village:', `(${gd.village?.x}|${gd.village?.y})`);
         syncTroopsAtHome();
-        injectPanel();
-        if (!isOnAmFarmScreen()) {
-            updatePanel('abra "Assistente de Saque"');
-        }
+        updatePanel(isOnAmFarmScreen() ? 'pronto — clique START' : 'abra "Assistente de Saque"');
     }
 
     if (document.readyState === 'loading') {
