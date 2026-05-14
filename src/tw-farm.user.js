@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TW Farm + Tagger — ThCarmo
 // @namespace    https://github.com/ThCarmo/tribal-wars-userscript
-// @version      0.2.5
+// @version      0.3.0
 // @description  Farm (2L+1S, raio configurável) + Incoming Tagger (classifica tropa por velocidade)
 // @author       Thiago Carmo
 // @match        *://*.tribalwars.com.br/*
@@ -13,11 +13,11 @@
 // @downloadURL  https://raw.githubusercontent.com/ThCarmo/tribal-wars-userscript/main/src/tw-farm.user.js
 // ==/UserScript==
 
-// ===== INJEÇÃO MAIN WORLD (v0.2.5) =====
+// ===== INJEÇÃO MAIN WORLD (v0.3.0) =====
 // Tampermonkey 5.5 stable ignora @inject-into page. Workaround clássico:
 // criar um <script> tag com o código real, anexar ao DOM, o browser executa
 // no MAIN WORLD (mesmo contexto que o DevTools console). Funciona em qualquer TM.
-console.log('[TW-FARM] stub carregado v0.2.5 — injetando main world script');
+console.log('[TW-FARM] stub carregado v0.3.0 — injetando main world script');
 (function injectMainWorldScript() {
     function mainWorldScript() {
         'use strict';
@@ -32,7 +32,7 @@ console.log('[TW-FARM] stub carregado v0.2.5 — injetando main world script');
             const b = document.createElement('div');
             b.id = 'tw-farm-banner-prova';
             b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#d40000;color:#fff;padding:12px;font:bold 14px Arial;text-align:center;border-bottom:3px solid #000;box-shadow:0 2px 10px rgba(0,0,0,0.6);';
-            b.innerHTML = `✅ TW Farm userscript v0.2.5 ATIVO (script-tag bridge) — URL: ${location.href.slice(0, 80)} <span style="margin-left:20px;cursor:pointer;text-decoration:underline;" id="tw-farm-banner-close">[fechar]</span>`;
+            b.innerHTML = `✅ TW Farm userscript v0.3.0 ATIVO (Map Scan beta) — URL: ${location.href.slice(0, 80)} <span style="margin-left:20px;cursor:pointer;text-decoration:underline;" id="tw-farm-banner-close">[fechar]</span>`;
             (document.body || document.documentElement).insertAdjacentElement('afterbegin', b);
             document.getElementById('tw-farm-banner-close').onclick = () => b.remove();
         };
@@ -41,7 +41,7 @@ console.log('[TW-FARM] stub carregado v0.2.5 — injetando main world script');
         } else {
             document.addEventListener('DOMContentLoaded', showBanner);
         }
-        console.log('[TW-FARM] v0.2.5 carregado (script-tag bridge, main world) em', location.href);
+        console.log('[TW-FARM] v0.3.0 carregado (script-tag bridge, main world) em', location.href);
     } catch (e) {
         console.error('[TW-FARM] banner-prova falhou:', e);
     }
@@ -85,6 +85,10 @@ console.log('[TW-FARM] stub carregado v0.2.5 — injetando main world script');
         troopsAtHome: { light: 0, spy: 0 },
         taggerRunning: false,
         taggerProgress: 'ocioso',
+        // Map Scan (barbáros direto do /map/village.txt)
+        mapScanRunning: false,
+        mapScanProgress: 'ocioso',
+        mapScanLast: null, // { count, atRadius, at, barbs[] }
     };
 
     const w = window;
@@ -473,6 +477,62 @@ console.log('[TW-FARM] stub carregado v0.2.5 — injetando main world script');
         updatePanel(null);
     }
 
+    // ============ MAP SCAN (lista barbáros do /map/village.txt) ============
+    // Endpoint público do jogo, sem CSRF, sem captcha. CSV:
+    //   id, name (URL-encoded), x, y, player_id, points, rank
+    // player_id = 0 → barbáro.
+
+    async function fetchBarbsInRadius(maxRadius) {
+        const gd = getGameData();
+        if (!gd || !gd.village) {
+            log('Map scan: game_data.village indisponível');
+            return [];
+        }
+        const ox = gd.village.x, oy = gd.village.y;
+        log(`Map scan: buscando barbáros em raio ${maxRadius} de (${ox}|${oy})`);
+        let text;
+        try {
+            const resp = await fetch('/map/village.txt', { credentials: 'same-origin' });
+            if (!resp.ok) {
+                log(`Map scan: HTTP ${resp.status} em /map/village.txt`);
+                return [];
+            }
+            text = await resp.text();
+        } catch (e) {
+            log('Map scan: erro de rede:', e);
+            return [];
+        }
+
+        const lines = text.split('\n');
+        const barbs = [];
+        for (const line of lines) {
+            if (!line) continue;
+            const parts = line.split(',');
+            if (parts.length < 7) continue;
+            const player = parseInt(parts[4], 10);
+            if (player !== 0) continue;
+            const x = parseInt(parts[2], 10);
+            const y = parseInt(parts[3], 10);
+            if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+            const dx = x - ox, dy = y - oy;
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            if (dist > maxRadius) continue;
+            let name;
+            try { name = decodeURIComponent(parts[1].replace(/\+/g, ' ')); }
+            catch (e) { name = parts[1]; }
+            barbs.push({
+                id: parts[0],
+                name,
+                x, y,
+                points: parseInt(parts[5], 10) || 0,
+                dist
+            });
+        }
+        barbs.sort((a, b) => a.dist - b.dist);
+        log(`Map scan: ${barbs.length} barbáros no raio ${maxRadius}`);
+        return barbs;
+    }
+
     function injectPanel() {
         if (document.getElementById('tw-farm-panel')) return;
         const panel = document.createElement('div');
@@ -503,6 +563,15 @@ console.log('[TW-FARM] stub carregado v0.2.5 — injetando main world script');
     – <input id="tw-farm-jmax" type="number" value="${CFG.jitterMs[1]}" min="200" max="60000" style="width:54px;font-size:10px;"/>
   </div>
   <div style="font-size:9px;color:#888;">Último erro: <span id="tw-farm-lasterr">-</span></div>
+
+  <hr style="border:none;border-top:1px solid #603000;margin:8px 0 6px;">
+
+  <div style="font-weight:bold;color:#603000;margin-bottom:3px;">🗺 Map Scan (barbáros)</div>
+  <div style="display:flex;gap:4px;margin-bottom:4px;">
+    <button id="tw-map-scan" style="flex:1;background:#603000;color:white;border:none;padding:5px;cursor:pointer;font-weight:bold;border-radius:2px;">🔍 Buscar Barbs no raio</button>
+  </div>
+  <div style="font-size:10px;">Status: <span id="tw-map-status">ocioso</span></div>
+  <div style="font-size:9px;color:#888;">Lê /map/village.txt do servidor. Sem ataque ainda — só lista no console (F12).</div>
 
   <hr style="border:none;border-top:1px solid #603000;margin:8px 0 6px;">
 
@@ -546,6 +615,30 @@ console.log('[TW-FARM] stub carregado v0.2.5 — injetando main world script');
         };
         document.getElementById('tw-tagger-stop').onclick = () => {
             STATE.taggerRunning = false;
+        };
+
+        document.getElementById('tw-map-scan').onclick = async () => {
+            if (STATE.mapScanRunning) return;
+            STATE.mapScanRunning = true;
+            const r = parseInt(document.getElementById('tw-farm-radius').value, 10) || 35;
+            const $status = document.getElementById('tw-map-status');
+            $status.textContent = `buscando em raio ${r}...`;
+            try {
+                const barbs = await fetchBarbsInRadius(r);
+                STATE.mapScanLast = { count: barbs.length, atRadius: r, at: serverTime(), barbs };
+                w.TW_FARM_LAST_SCAN = barbs;
+                $status.textContent = `${barbs.length} barbáros no raio ${r}. Console F12 mostra os 30 mais próximos.`;
+                console.log(`%c[TW-FARM] Map Scan: ${barbs.length} barbáros no raio ${r}`, 'color:#603000;font-weight:bold');
+                console.table(barbs.slice(0, 30).map(b => ({
+                    id: b.id, coord: `(${b.x}|${b.y})`, dist: b.dist.toFixed(1), pts: b.points, name: b.name
+                })));
+                console.log('Lista completa em window.TW_FARM_LAST_SCAN');
+            } catch (e) {
+                $status.textContent = `erro: ${e.message || e}`;
+                log('Map scan exceção:', e);
+            } finally {
+                STATE.mapScanRunning = false;
+            }
         };
     }
 
