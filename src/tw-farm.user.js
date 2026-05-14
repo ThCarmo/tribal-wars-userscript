@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TW Farm + Tagger — ThCarmo
 // @namespace    https://github.com/ThCarmo/tribal-wars-userscript
-// @version      0.2.1
+// @version      0.2.2
 // @description  Farm (2L+1S, raio configurável) + Incoming Tagger (classifica tropa por velocidade)
 // @author       Thiago Carmo
 // @match        *://*.tribalwars.com.br/*
@@ -17,6 +17,30 @@
 
 (function () {
     'use strict';
+
+    // ===== BANNER DE PROVA DE VIDA (v0.2.2) =====
+    // Aparece NO TOPO da página antes de qualquer outra coisa.
+    // Se este banner não aparecer, o script nem está rodando (problema de CSP/sandbox).
+    // Se aparecer, o script roda — qualquer outra falha é local a uma função.
+    try {
+        const showBanner = () => {
+            if (document.getElementById('tw-farm-banner-prova')) return;
+            const b = document.createElement('div');
+            b.id = 'tw-farm-banner-prova';
+            b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#d40000;color:#fff;padding:12px;font:bold 14px Arial;text-align:center;border-bottom:3px solid #000;box-shadow:0 2px 10px rgba(0,0,0,0.6);';
+            b.innerHTML = `✅ TW Farm userscript v0.2.2 ATIVO — URL: ${location.href.slice(0, 80)} <span style="margin-left:20px;cursor:pointer;text-decoration:underline;" id="tw-farm-banner-close">[fechar]</span>`;
+            (document.body || document.documentElement).insertAdjacentElement('afterbegin', b);
+            document.getElementById('tw-farm-banner-close').onclick = () => b.remove();
+        };
+        if (document.body) {
+            showBanner();
+        } else {
+            document.addEventListener('DOMContentLoaded', showBanner);
+        }
+        console.log('[TW-FARM] v0.2.2 carregado em', location.href);
+    } catch (e) {
+        console.error('[TW-FARM] banner-prova falhou:', e);
+    }
 
     const CFG = {
         radiusMax: 35,
