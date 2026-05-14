@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TW Farm + Tagger — ThCarmo
 // @namespace    https://github.com/ThCarmo/tribal-wars-userscript
-// @version      0.3.0
+// @version      0.3.1
 // @description  Farm (2L+1S, raio configurável) + Incoming Tagger (classifica tropa por velocidade)
 // @author       Thiago Carmo
 // @match        *://*.tribalwars.com.br/*
@@ -13,11 +13,11 @@
 // @downloadURL  https://raw.githubusercontent.com/ThCarmo/tribal-wars-userscript/main/src/tw-farm.user.js
 // ==/UserScript==
 
-// ===== INJEÇÃO MAIN WORLD (v0.3.0) =====
+// ===== INJEÇÃO MAIN WORLD (v0.3.1) =====
 // Tampermonkey 5.5 stable ignora @inject-into page. Workaround clássico:
 // criar um <script> tag com o código real, anexar ao DOM, o browser executa
 // no MAIN WORLD (mesmo contexto que o DevTools console). Funciona em qualquer TM.
-console.log('[TW-FARM] stub carregado v0.3.0 — injetando main world script');
+console.log('[TW-FARM] stub carregado v0.3.1 — injetando main world script');
 (function injectMainWorldScript() {
     function mainWorldScript() {
         'use strict';
@@ -32,7 +32,7 @@ console.log('[TW-FARM] stub carregado v0.3.0 — injetando main world script');
             const b = document.createElement('div');
             b.id = 'tw-farm-banner-prova';
             b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#d40000;color:#fff;padding:12px;font:bold 14px Arial;text-align:center;border-bottom:3px solid #000;box-shadow:0 2px 10px rgba(0,0,0,0.6);';
-            b.innerHTML = `✅ TW Farm userscript v0.3.0 ATIVO (Map Scan beta) — URL: ${location.href.slice(0, 80)} <span style="margin-left:20px;cursor:pointer;text-decoration:underline;" id="tw-farm-banner-close">[fechar]</span>`;
+            b.innerHTML = `✅ TW Farm userscript v0.3.1 ATIVO (Praça sender beta) — URL: ${location.href.slice(0, 80)} <span style="margin-left:20px;cursor:pointer;text-decoration:underline;" id="tw-farm-banner-close">[fechar]</span>`;
             (document.body || document.documentElement).insertAdjacentElement('afterbegin', b);
             document.getElementById('tw-farm-banner-close').onclick = () => b.remove();
         };
@@ -41,7 +41,7 @@ console.log('[TW-FARM] stub carregado v0.3.0 — injetando main world script');
         } else {
             document.addEventListener('DOMContentLoaded', showBanner);
         }
-        console.log('[TW-FARM] v0.3.0 carregado (script-tag bridge, main world) em', location.href);
+        console.log('[TW-FARM] v0.3.1 carregado (script-tag bridge, main world) em', location.href);
     } catch (e) {
         console.error('[TW-FARM] banner-prova falhou:', e);
     }
@@ -533,6 +533,114 @@ console.log('[TW-FARM] stub carregado v0.3.0 — injetando main world script');
         return barbs;
     }
 
+    // ============ ENVIO VIA PRAÇA DE REUNIÕES ============
+    // Flow padrão TW:
+    //   Step 1: GET screen=place&target=ID → HTML com form (CSRF token, hidden fields)
+    //   Step 2: POST try=confirm com light/spy preenchidos → HTML "Confirmar ataque"
+    //   Step 3: POST action=command com tudo do form de confirmação → ataque enviado
+    // Retorna { ok: true } ou { ok: false, error: 'msg' }
+
+    async function sendFarmViaPlace(targetId, lightCount, spyCount, dryRun = false) {
+        const gd = getGameData();
+        if (!gd || !gd.village || !gd.village.id) {
+            return { ok: false, error: 'game_data.village indisponível' };
+        }
+        const sourceId = gd.village.id;
+        const csrf = gd.csrf || w.csrf_token || (gd.player && gd.player.sitter_id);
+        const parser = new DOMParser();
+
+        // Step 1: GET form da Praça com target preenchido
+        const url1 = `/game.php?village=${sourceId}&screen=place&target=${targetId}`;
+        let r1;
+        try {
+            r1 = await fetch(url1, { credentials: 'same-origin' });
+        } catch (e) { return { ok: false, error: 'rede step1: ' + e.message }; }
+        if (!r1.ok) return { ok: false, error: `HTTP ${r1.status} step1` };
+        const html1 = await r1.text();
+        const doc1 = parser.parseFromString(html1, 'text/html');
+
+        // valida que estamos na tela certa (sem erro de bloqueio)
+        const errBox1 = doc1.querySelector('.error_box, .login_error');
+        if (errBox1) return { ok: false, error: 'step1 erro: ' + errBox1.textContent.trim().slice(0,150) };
+
+        const form1 = doc1.querySelector('form#command-data-form, form[action*="screen=place"], form[name="form_command"]');
+        if (!form1) return { ok: false, error: 'step1 form não encontrado (HTML inesperado)' };
+
+        // Pegar h (CSRF) do form ou do gd
+        let h = csrf;
+        const hInput1 = form1.querySelector('input[name="h"]');
+        if (hInput1 && hInput1.value) h = hInput1.value;
+        if (!h) return { ok: false, error: 'CSRF token não encontrado' };
+
+        // Construir body com hidden fields existentes + tropas
+        const fd2 = new FormData();
+        form1.querySelectorAll('input[type=hidden]').forEach(inp => {
+            if (inp.name) fd2.append(inp.name, inp.value || '');
+        });
+        // Coords do alvo (pegar do scan se disponível)
+        const target = (STATE.mapScanLast && STATE.mapScanLast.barbs)
+            ? STATE.mapScanLast.barbs.find(b => String(b.id) === String(targetId))
+            : null;
+        if (target) { fd2.set('x', target.x); fd2.set('y', target.y); }
+        fd2.set('target', targetId);
+
+        // Zera todas as unidades, depois preenche light/spy
+        const allUnits = ['spear','sword','axe','archer','spy','light','marcher','heavy','ram','catapult','knight','militia','snob'];
+        for (const u of allUnits) fd2.set(u, '0');
+        fd2.set('light', String(lightCount));
+        fd2.set('spy', String(spyCount));
+        fd2.set('attack', 'l'); // "Atacar"
+        fd2.set('h', h);
+
+        if (dryRun) {
+            const debugBody = {};
+            for (const [k, v] of fd2.entries()) debugBody[k] = v;
+            return { ok: true, dryRun: true, step1Url: url1, csrf: h, body: debugBody };
+        }
+
+        // Step 2: POST try=confirm
+        const url2 = `/game.php?village=${sourceId}&screen=place&try=confirm&h=${h}`;
+        let r2;
+        try {
+            r2 = await fetch(url2, { method: 'POST', body: fd2, credentials: 'same-origin' });
+        } catch (e) { return { ok: false, error: 'rede step2: ' + e.message }; }
+        if (!r2.ok) return { ok: false, error: `HTTP ${r2.status} step2` };
+        const html2 = await r2.text();
+        const doc2 = parser.parseFromString(html2, 'text/html');
+
+        const errBox2 = doc2.querySelector('.error_box, .autocomplete-suggestions .error');
+        if (errBox2) return { ok: false, error: 'step2 erro: ' + errBox2.textContent.trim().slice(0,150) };
+
+        const form2 = doc2.querySelector('form#command-data-form, form[id*="command"], form[action*="action=command"]');
+        if (!form2) return { ok: false, error: 'step2 form de confirmação não retornou' };
+
+        // Step 3: extrai tudo do form de confirmação + manda action=command
+        const fd3 = new FormData();
+        form2.querySelectorAll('input').forEach(inp => {
+            if (inp.name && inp.type !== 'submit') fd3.append(inp.name, inp.value || '');
+        });
+        fd3.set('attack', 'true');
+
+        const action3 = form2.getAttribute('action') || `/game.php?village=${sourceId}&screen=place&action=command&h=${h}`;
+        const url3 = action3.startsWith('http') ? action3 : action3;
+        let r3;
+        try {
+            r3 = await fetch(url3, { method: 'POST', body: fd3, credentials: 'same-origin' });
+        } catch (e) { return { ok: false, error: 'rede step3: ' + e.message }; }
+        if (!r3.ok) return { ok: false, error: `HTTP ${r3.status} step3` };
+        const html3 = await r3.text();
+
+        if (html3.includes('command_id') || html3.includes('screen=info_command') || html3.includes('overview_villages') || /comando.*sucesso/i.test(html3)) {
+            return { ok: true };
+        }
+        const doc3 = parser.parseFromString(html3, 'text/html');
+        const err3 = doc3.querySelector('.error_box, .error');
+        if (err3) return { ok: false, error: 'step3 erro: ' + err3.textContent.trim().slice(0,150) };
+
+        // sem confirmação clara — devolve raw pra inspecionar
+        return { ok: false, error: 'step3 resposta ambígua', rawSample: html3.slice(0, 300) };
+    }
+
     function injectPanel() {
         if (document.getElementById('tw-farm-panel')) return;
         const panel = document.createElement('div');
@@ -570,8 +678,12 @@ console.log('[TW-FARM] stub carregado v0.3.0 — injetando main world script');
   <div style="display:flex;gap:4px;margin-bottom:4px;">
     <button id="tw-map-scan" style="flex:1;background:#603000;color:white;border:none;padding:5px;cursor:pointer;font-weight:bold;border-radius:2px;">🔍 Buscar Barbs no raio</button>
   </div>
+  <div style="display:flex;gap:4px;margin-bottom:4px;">
+    <button id="tw-map-dryrun" style="flex:1;background:#a07000;color:white;border:none;padding:4px;cursor:pointer;font-size:10px;border-radius:2px;">🧪 Testar 1 (dry-run)</button>
+    <button id="tw-map-real1" style="flex:1;background:#7a1f1f;color:white;border:none;padding:4px;cursor:pointer;font-size:10px;border-radius:2px;">🎯 Atacar 1 (REAL)</button>
+  </div>
   <div style="font-size:10px;">Status: <span id="tw-map-status">ocioso</span></div>
-  <div style="font-size:9px;color:#888;">Lê /map/village.txt do servidor. Sem ataque ainda — só lista no console (F12).</div>
+  <div style="font-size:9px;color:#888;">Dry-run mostra o que SERIA enviado, sem disparar. Atacar 1 manda 2L+1S na barbára mais próxima.</div>
 
   <hr style="border:none;border-top:1px solid #603000;margin:8px 0 6px;">
 
@@ -615,6 +727,55 @@ console.log('[TW-FARM] stub carregado v0.3.0 — injetando main world script');
         };
         document.getElementById('tw-tagger-stop').onclick = () => {
             STATE.taggerRunning = false;
+        };
+
+        document.getElementById('tw-map-dryrun').onclick = async () => {
+            const barbs = STATE.mapScanLast && STATE.mapScanLast.barbs;
+            if (!barbs || barbs.length === 0) {
+                document.getElementById('tw-map-status').textContent = 'rode o Buscar Barbs primeiro';
+                return;
+            }
+            const t = barbs[0];
+            document.getElementById('tw-map-status').textContent = `dry-run em (${t.x}|${t.y}) id ${t.id}...`;
+            const res = await sendFarmViaPlace(t.id, 2, 1, true);
+            console.log('%c[TW-FARM] DRY-RUN resultado:', 'color:#a07000;font-weight:bold', res);
+            if (res.ok) {
+                document.getElementById('tw-map-status').textContent = `dry-run ok. body em window.TW_FARM_LAST_DRYRUN`;
+                w.TW_FARM_LAST_DRYRUN = res;
+            } else {
+                document.getElementById('tw-map-status').textContent = `dry-run FALHOU: ${res.error}`;
+            }
+        };
+
+        document.getElementById('tw-map-real1').onclick = async () => {
+            const barbs = STATE.mapScanLast && STATE.mapScanLast.barbs;
+            if (!barbs || barbs.length === 0) {
+                document.getElementById('tw-map-status').textContent = 'rode o Buscar Barbs primeiro';
+                return;
+            }
+            if (STATE.troopsAtHome.light < 2) {
+                document.getElementById('tw-map-status').textContent = `precisa 2 CL em casa (tem ${STATE.troopsAtHome.light}). Use RESYNC ou ajuste manual.`;
+                return;
+            }
+            const t = barbs[0];
+            const confirm1 = window.confirm(`ATAQUE REAL: 2L+1S → (${t.x}|${t.y}) [${t.name}], dist ${t.dist.toFixed(1)}c. Confirma?`);
+            if (!confirm1) {
+                document.getElementById('tw-map-status').textContent = 'cancelado pelo operador';
+                return;
+            }
+            document.getElementById('tw-map-status').textContent = `enviando 2L+1S → (${t.x}|${t.y})...`;
+            const res = await sendFarmViaPlace(t.id, 2, 1, false);
+            console.log('%c[TW-FARM] REAL resultado:', 'color:#7a1f1f;font-weight:bold', res);
+            if (res.ok) {
+                STATE.troopsAtHome.light -= 2;
+                STATE.troopsAtHome.spy -= 1;
+                STATE.lastFarmByTarget[t.id] = serverTime();
+                lsSet(LS_KEY, STATE.lastFarmByTarget);
+                document.getElementById('tw-map-status').textContent = `ataque enviado em (${t.x}|${t.y}). Confira no Comandos do jogo.`;
+                updatePanel(null);
+            } else {
+                document.getElementById('tw-map-status').textContent = `FALHOU: ${res.error}`;
+            }
         };
 
         document.getElementById('tw-map-scan').onclick = async () => {
