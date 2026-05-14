@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TW Farm + Tagger — ThCarmo
 // @namespace    https://github.com/ThCarmo/tribal-wars-userscript
-// @version      0.3.2
+// @version      0.3.3
 // @description  Farm (2L+1S, raio configurável) + Incoming Tagger (classifica tropa por velocidade)
 // @author       Thiago Carmo
 // @match        *://*.tribalwars.com.br/*
@@ -13,11 +13,11 @@
 // @downloadURL  https://raw.githubusercontent.com/ThCarmo/tribal-wars-userscript/main/src/tw-farm.user.js
 // ==/UserScript==
 
-// ===== INJEÇÃO MAIN WORLD (v0.3.2) =====
+// ===== INJEÇÃO MAIN WORLD (v0.3.3) =====
 // Tampermonkey 5.5 stable ignora @inject-into page. Workaround clássico:
 // criar um <script> tag com o código real, anexar ao DOM, o browser executa
 // no MAIN WORLD (mesmo contexto que o DevTools console). Funciona em qualquer TM.
-console.log('[TW-FARM] stub carregado v0.3.2 — injetando main world script');
+console.log('[TW-FARM] stub carregado v0.3.3 — injetando main world script');
 (function injectMainWorldScript() {
     function mainWorldScript() {
         'use strict';
@@ -32,7 +32,7 @@ console.log('[TW-FARM] stub carregado v0.3.2 — injetando main world script');
             const b = document.createElement('div');
             b.id = 'tw-farm-banner-prova';
             b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#d40000;color:#fff;padding:12px;font:bold 14px Arial;text-align:center;border-bottom:3px solid #000;box-shadow:0 2px 10px rgba(0,0,0,0.6);';
-            b.innerHTML = `✅ TW Farm userscript v0.3.2 ATIVO (Atacar Todos) — URL: ${location.href.slice(0, 80)} <span style="margin-left:20px;cursor:pointer;text-decoration:underline;" id="tw-farm-banner-close">[fechar]</span>`;
+            b.innerHTML = `✅ TW Farm userscript v0.3.3 ATIVO (auto-resync) — URL: ${location.href.slice(0, 80)} <span style="margin-left:20px;cursor:pointer;text-decoration:underline;" id="tw-farm-banner-close">[fechar]</span>`;
             (document.body || document.documentElement).insertAdjacentElement('afterbegin', b);
             document.getElementById('tw-farm-banner-close').onclick = () => b.remove();
         };
@@ -41,7 +41,7 @@ console.log('[TW-FARM] stub carregado v0.3.2 — injetando main world script');
         } else {
             document.addEventListener('DOMContentLoaded', showBanner);
         }
-        console.log('[TW-FARM] v0.3.2 carregado (script-tag bridge, main world) em', location.href);
+        console.log('[TW-FARM] v0.3.3 carregado (script-tag bridge, main world) em', location.href);
     } catch (e) {
         console.error('[TW-FARM] banner-prova falhou:', e);
     }
@@ -653,9 +653,25 @@ console.log('[TW-FARM] stub carregado v0.3.2 — injetando main world script');
             return;
         }
 
+        // Auto-resync: se inputs do painel estão zerados, tenta ler do jogo antes de barrar.
+        if (STATE.troopsAtHome.light < 2 || STATE.troopsAtHome.spy < 1) {
+            log('Map farm: estoque zerado nos inputs, tentando syncTroopsAtHome()...');
+            syncTroopsAtHome();
+            const $l = document.getElementById('tw-farm-light');
+            const $s = document.getElementById('tw-farm-spy');
+            if ($l) $l.value = STATE.troopsAtHome.light;
+            if ($s) $s.value = STATE.troopsAtHome.spy;
+        }
+        if (STATE.troopsAtHome.light < 2 || STATE.troopsAtHome.spy < 1) {
+            STATE.mapScanProgress = `estoque ${STATE.troopsAtHome.light}CL/${STATE.troopsAtHome.spy}spy < min(2,1). Preencha os campos manualmente e tente de novo.`;
+            updatePanel(STATE.mapScanProgress);
+            log('Map farm abortado:', STATE.mapScanProgress);
+            return;
+        }
+
         STATE.mapScanRunning = true;
         let attempted = 0, sent = 0, skippedCooldown = 0, errors = 0;
-        log(`Map farm: iniciando sobre ${barbs.length} alvos`);
+        log(`Map farm: iniciando sobre ${barbs.length} alvos. Estoque: ${STATE.troopsAtHome.light}CL/${STATE.troopsAtHome.spy}spy`);
 
         for (const b of barbs) {
             if (!STATE.mapScanRunning) {
@@ -713,7 +729,7 @@ console.log('[TW-FARM] stub carregado v0.3.2 — injetando main world script');
         }
 
         STATE.mapScanRunning = false;
-        STATE.mapScanProgress = `parado: ${sent} enviados, ${errors} erros, ${skippedCooldown} em cooldown`;
+        STATE.mapScanProgress = `parado: ${sent} enviados, ${errors} erros, ${skippedCooldown} em cooldown. Razão: ${STATE.lastError || 'fim da lista'}`;
         updatePanel(STATE.mapScanProgress);
         log('Map farm finalizado:', STATE.mapScanProgress);
     }
