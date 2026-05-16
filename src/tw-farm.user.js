@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TW Farm + Build + Recruit — ThCarmo
 // @namespace    https://github.com/ThCarmo/tribal-wars-userscript
-// @version      0.7.9
+// @version      0.8.0
 // @description  Farm (2L+1S, raio configurável) + Build Queue (multi-vila) + Recruit + Incoming Tagger
 // @author       Thiago Carmo
 // @match        *://*.tribalwars.com.br/*
@@ -17,7 +17,7 @@
 // Tampermonkey 5.5 stable ignora @inject-into page. Workaround clássico:
 // criar um <script> tag com o código real, anexar ao DOM, o browser executa
 // no MAIN WORLD (mesmo contexto que o DevTools console). Funciona em qualquer TM.
-console.log('[TW-FARM] stub carregado v0.7.9 — injetando main world script');
+console.log('[TW-FARM] stub carregado v0.8.0 — injetando main world script');
 (function injectMainWorldScript() {
     function mainWorldScript() {
         'use strict';
@@ -32,7 +32,7 @@ console.log('[TW-FARM] stub carregado v0.7.9 — injetando main world script');
             const b = document.createElement('div');
             b.id = 'tw-farm-banner-prova';
             b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#d40000;color:#fff;padding:12px;font:bold 14px Arial;text-align:center;border-bottom:3px solid #000;box-shadow:0 2px 10px rgba(0,0,0,0.6);';
-            b.innerHTML = `✅ TW Farm + Build + Research + Recruit v0.7.9 ATIVO — painéis: Farm à direita, Build/Research à esquerda <span style="margin-left:20px;cursor:pointer;text-decoration:underline;" id="tw-farm-banner-close">[fechar]</span>`;
+            b.innerHTML = `✅ TW Farm + Build + Research + Recruit v0.8.0 ATIVO — painéis: Farm à direita, Build/Research à esquerda <span style="margin-left:20px;cursor:pointer;text-decoration:underline;" id="tw-farm-banner-close">[fechar]</span>`;
             (document.body || document.documentElement).insertAdjacentElement('afterbegin', b);
             document.getElementById('tw-farm-banner-close').onclick = () => b.remove();
         };
@@ -41,7 +41,7 @@ console.log('[TW-FARM] stub carregado v0.7.9 — injetando main world script');
         } else {
             document.addEventListener('DOMContentLoaded', showBanner);
         }
-        console.log('[TW-FARM] v0.7.9 carregado (script-tag bridge, main world) em', location.href);
+        console.log('[TW-FARM] v0.8.0 carregado (script-tag bridge, main world) em', location.href);
     } catch (e) {
         console.error('[TW-FARM] banner-prova falhou:', e);
     }
@@ -1026,8 +1026,8 @@ console.log('[TW-FARM] stub carregado v0.7.9 — injetando main world script');
             researchAttempts: 5,
             coinsPerCycle: 1,
             maxNobles: 50,
-            // === Especialização de vilas (v0.7.9: TODAS uniform) ===
-            // Default v0.7.9: 200 (> 100) = todas as vilas são NOBLE (template
+            // === Especialização de vilas (v0.8.0: TODAS uniform) ===
+            // Default v0.8.0: 200 (> 100) = todas as vilas são NOBLE (template
             // universal, cunham moedas + treinam nobre + recrutam heavy).
             // Pra voltar à especialização (poucas vilas NOBLE, resto OFF heavy
             // puro), diminuir esse número no painel.
@@ -1042,7 +1042,7 @@ console.log('[TW-FARM] stub carregado v0.7.9 — injetando main world script');
         //         Escolta mínima de heavy + spy.
 
         // ============ TEMPLATE UNIVERSAL ============
-        // Decisão do user (v0.7.9): todas as vilas fazem tudo. So precisa de:
+        // Decisão do user (v0.8.0): todas as vilas fazem tudo. So precisa de:
         //   recursos + farm + storage + smith + stable + market + academia
         // NAO constroi: barracks (sem lança/espada/axe), garage (sem
         // ariete/cat), hide (sem esconder recurso de quem ataca), wall
@@ -1050,7 +1050,7 @@ console.log('[TW-FARM] stub carregado v0.7.9 — injetando main world script');
         // Academia (snob) maxima nivel 1 nesse mundo — academia + cunhagem
         // + treino de nobre rolam em TODAS as vilas.
 
-        // Template ESTRITO (v0.7.9): smith 20 + snob 1 + stable 10 + pré-reqs.
+        // Template ESTRITO (v0.8.0): smith 20 + snob 1 + stable 10 + pré-reqs.
         // Após completar, vila para de construir (template concluído ✓).
         // Loops de coin/snob/recruit continuam rodando normalmente.
         //
@@ -1126,15 +1126,15 @@ console.log('[TW-FARM] stub carregado v0.7.9 — injetando main world script');
             try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
         };
 
-        // Migration v0.7.9: nobleCount mudou de default 5 → 200 (todas viram NOBLE).
+        // Migration v0.8.0: nobleCount mudou de default 5 → 200 (todas viram NOBLE).
         // Se o user tem valor antigo salvo (era 5 ou menor) E nunca passou pela
-        // v0.7.9, reseta pro novo default. Se mexeu manualmente pra >5, respeita.
+        // v0.8.0, reseta pro novo default. Se mexeu manualmente pra >5, respeita.
         const LS_VERSION_KEY = 'twBuildLastSeenVersion';
         const seenVersion = lsGetB(LS_VERSION_KEY, null);
         if (seenVersion !== '0.7.4') {
             const oldCount = lsGetB(LS_NOBLE_COUNT, null);
             if (oldCount === null || oldCount <= 5) {
-                // Reseta pro novo default da v0.7.9
+                // Reseta pro novo default da v0.8.0
                 localStorage.removeItem(LS_NOBLE_COUNT);
             }
             lsSetB(LS_VERSION_KEY, '0.7.4');
@@ -1153,7 +1153,7 @@ console.log('[TW-FARM] stub carregado v0.7.9 — injetando main world script');
             cycleCount: 0,
             lastCycleAt: null,
             log: [],
-            // === Especialização por role (v0.7.9) ===
+            // === Especialização por role (v0.8.0) ===
             templates: {
                 OFF:   customTpl.OFF   || TEMPLATE_OFF,
                 NOBLE: customTpl.NOBLE || TEMPLATE_NOBLE,
@@ -1265,6 +1265,240 @@ console.log('[TW-FARM] stub carregado v0.7.9 — injetando main world script');
                 }
             }
             return [];
+        }
+
+        // ============ ATAQUE DE CONQUISTA (v0.8.0) ============
+        // Localiza jogador alvo via /map/player.txt, vilas dele via /map/village.txt,
+        // calcula PLANO (qual nossa vila ataca qual vila dele, com 4 NT por alvo),
+        // mostra plano pra usuário confirmar, executa com guard-rails.
+
+        const ATCFG = {
+            noblesPerTarget: 4,         // ataques NT por vila do alvo
+            heavyPerAttack: 500,        // escolta de heavy por NT
+            spyPerAttack: 0,            // spy junto (info)
+            minPauseMs: 2000,           // pausa entre disparos
+            maxAttacksPerMin: 25,       // cap pra evitar captcha
+        };
+
+        const LS_ATTACK_HISTORY = 'twBuildAttackHistory';
+
+        BSTATE.attackPlanLast = null;
+        BSTATE.attackRunning = false;
+        BSTATE.attackHistory = lsGetB(LS_ATTACK_HISTORY, {});
+
+        async function fetchPlayerByNameB(name) {
+            try {
+                const resp = await fetch('/map/player.txt', { credentials: 'same-origin' });
+                if (!resp.ok) return null;
+                const text = await resp.text();
+                const search = name.toLowerCase().trim();
+                const matches = [];
+                for (const line of text.split('\n')) {
+                    if (!line) continue;
+                    const parts = line.split(',');
+                    if (parts.length < 4) continue;
+                    let plName;
+                    try { plName = decodeURIComponent(parts[1].replace(/\+/g, ' ')); }
+                    catch (e) { plName = parts[1]; }
+                    const lower = plName.toLowerCase();
+                    if (lower === search) return { id: parts[0], name: plName, points: parseInt(parts[4]) || 0, exact: true };
+                    if (lower.includes(search)) matches.push({ id: parts[0], name: plName, points: parseInt(parts[4]) || 0 });
+                }
+                if (matches.length === 1) return { ...matches[0], exact: false };
+                if (matches.length > 1) return { matches };
+                return null;
+            } catch (e) {
+                logB('fetchPlayerByName crashou: ' + e.message);
+                return null;
+            }
+        }
+
+        async function fetchVillagesOfPlayerB(playerId) {
+            try {
+                const resp = await fetch('/map/village.txt', { credentials: 'same-origin' });
+                if (!resp.ok) return [];
+                const text = await resp.text();
+                const villages = [];
+                for (const line of text.split('\n')) {
+                    if (!line) continue;
+                    const parts = line.split(',');
+                    if (parts.length < 7) continue;
+                    if (parts[4] !== String(playerId)) continue;
+                    let name;
+                    try { name = decodeURIComponent(parts[1].replace(/\+/g, ' ')); }
+                    catch (e) { name = parts[1]; }
+                    villages.push({
+                        id: parts[0], name: name.slice(0, 30),
+                        x: parseInt(parts[2]), y: parseInt(parts[3]),
+                        points: parseInt(parts[5]) || 0,
+                    });
+                }
+                return villages;
+            } catch (e) {
+                logB('fetchVillagesOfPlayer crashou: ' + e.message);
+                return [];
+            }
+        }
+
+        async function sendAttackViaPlaceB(sourceVillageId, targetX, targetY, units, dryRun = false) {
+            // Flow 3-step padrão da Praça do TW.
+            // units = { snob: 1, heavy: 500, spy: 0, ... }
+            // Retorna { ok, error?, dryRun?, body? }
+            const parser = new DOMParser();
+            const url1 = `/game.php?village=${sourceVillageId}&screen=place`;
+            let r1;
+            try { r1 = await fetch(url1, { credentials: 'same-origin' }); }
+            catch (e) { return { ok: false, error: 'rede step1: ' + e.message }; }
+            if (!r1.ok) return { ok: false, error: `HTTP ${r1.status} step1` };
+            const html1 = await r1.text();
+            const doc1 = parser.parseFromString(html1, 'text/html');
+            const form1 = doc1.querySelector('form#command-data-form, form[action*="screen=place"], form[name="form_command"]');
+            if (!form1) return { ok: false, error: 'step1 sem form (praça não construída?)' };
+            const hInput = form1.querySelector('input[name="h"]');
+            const h = hInput ? hInput.value : (parseCsrfB(doc1) || '');
+            if (!h) return { ok: false, error: 'CSRF não encontrado' };
+
+            const fd2 = new FormData();
+            form1.querySelectorAll('input[type=hidden]').forEach(inp => {
+                if (inp.name) fd2.append(inp.name, inp.value || '');
+            });
+            fd2.set('x', String(targetX));
+            fd2.set('y', String(targetY));
+            const allUnits = ['spear','sword','axe','archer','spy','light','marcher','heavy','ram','catapult','knight','militia','snob'];
+            for (const u of allUnits) fd2.set(u, String(units[u] || 0));
+            fd2.set('attack', 'l');
+            fd2.set('h', h);
+
+            if (dryRun) {
+                const body = {};
+                for (const [k, v] of fd2.entries()) body[k] = v;
+                return { ok: true, dryRun: true, body };
+            }
+
+            const url2 = `/game.php?village=${sourceVillageId}&screen=place&try=confirm&h=${h}`;
+            let r2;
+            try { r2 = await fetch(url2, { method: 'POST', body: fd2, credentials: 'same-origin' }); }
+            catch (e) { return { ok: false, error: 'rede step2: ' + e.message }; }
+            const html2 = await r2.text();
+            const doc2 = parser.parseFromString(html2, 'text/html');
+            const errBox2 = doc2.querySelector('.error_box');
+            if (errBox2) return { ok: false, error: 'step2: ' + errBox2.textContent.trim().slice(0,150) };
+            const form2 = doc2.querySelector('form#command-data-form, form[id*="command"], form[action*="action=command"]');
+            if (!form2) return { ok: false, error: 'step2: form de confirmação não retornou' };
+
+            const fd3 = new FormData();
+            form2.querySelectorAll('input').forEach(inp => {
+                if (inp.name && inp.type !== 'submit') fd3.append(inp.name, inp.value || '');
+            });
+            fd3.set('attack', 'true');
+
+            const action3 = form2.getAttribute('action') || `/game.php?village=${sourceVillageId}&screen=place&action=command&h=${h}`;
+            let r3;
+            try { r3 = await fetch(action3, { method: 'POST', body: fd3, credentials: 'same-origin' }); }
+            catch (e) { return { ok: false, error: 'rede step3: ' + e.message }; }
+            const html3 = await r3.text();
+            if (html3.includes('command_id') || html3.includes('screen=info_command') ||
+                html3.includes('overview_villages') || /comando.*sucesso/i.test(html3)) {
+                return { ok: true };
+            }
+            const doc3 = parser.parseFromString(html3, 'text/html');
+            const err3 = doc3.querySelector('.error_box');
+            if (err3) return { ok: false, error: 'step3: ' + err3.textContent.trim().slice(0,150) };
+            return { ok: false, error: 'step3: resposta ambígua' };
+        }
+
+        async function planConquestB(playerName) {
+            // 1) Resolve jogador
+            const pl = await fetchPlayerByNameB(playerName);
+            if (!pl) { alert(`Jogador "${playerName}" não encontrado em /map/player.txt`); return null; }
+            if (pl.matches) {
+                const list = pl.matches.slice(0, 10).map((m, i) => `${i+1}) ${m.name} (id ${m.id}, ${m.points} pts)`).join('\n');
+                alert(`Várias correspondências pra "${playerName}":\n\n${list}\n\nDigite o nome EXATO no próximo prompt.`);
+                return null;
+            }
+            // 2) Vilas do alvo
+            const targets = await fetchVillagesOfPlayerB(pl.id);
+            if (targets.length === 0) { alert(`${pl.name} sem vilas ativas no mapa`); return null; }
+
+            // 3) Verifica que tropas atuais foram puxadas
+            if (!BSTATE.troopsOverview || !BSTATE.troopsOverview.rows) {
+                alert('Rode "📊 Tropas" primeiro pra eu saber quem tem nobre/heavy disponível.');
+                return null;
+            }
+            const troopsById = {};
+            BSTATE.troopsOverview.rows.forEach(r => { troopsById[r.villageId] = r.units || {}; });
+
+            // 4) Pra cada vila do alvo, escolhe N nossas vilas com nobre+heavy
+            const ourVillages = await getAllVillagesB();
+            const noblesUsed = {};  // {ourVillageId: count}
+            const plan = [];
+            let skipped = 0;
+            targets.sort((a, b) => a.points - b.points);  // ataca menor primeiro
+
+            for (const target of targets) {
+                for (let i = 0; i < ATCFG.noblesPerTarget; i++) {
+                    const candidates = ourVillages
+                        .map(v => {
+                            const units = troopsById[v.id] || {};
+                            return {
+                                ...v, units,
+                                dist: Math.sqrt((v.x - target.x)**2 + (v.y - target.y)**2),
+                                noblesLeft: (units.snob || 0) - (noblesUsed[v.id] || 0),
+                                heavyLeft: (units.heavy || 0) - ((noblesUsed[v.id] || 0) * ATCFG.heavyPerAttack),
+                            };
+                        })
+                        .filter(v => v.noblesLeft >= 1 && v.heavyLeft >= ATCFG.heavyPerAttack)
+                        .sort((a, b) => a.dist - b.dist);
+                    if (candidates.length === 0) { skipped++; continue; }
+                    const best = candidates[0];
+                    noblesUsed[best.id] = (noblesUsed[best.id] || 0) + 1;
+                    plan.push({
+                        target, source: { id: best.id, name: best.name, x: best.x, y: best.y },
+                        ataque: i + 1, dist: best.dist,
+                        units: { snob: 1, heavy: ATCFG.heavyPerAttack, spy: ATCFG.spyPerAttack },
+                    });
+                }
+            }
+            return { player: pl, targets, plan, skipped };
+        }
+
+        async function executeConquestPlanB(plan) {
+            BSTATE.attackRunning = true;
+            let sent = 0, errors = 0;
+            const startMs = Date.now();
+            for (const item of plan) {
+                if (!BSTATE.attackRunning) { logB('Ataque parado pelo usuário'); break; }
+                // Rate limiting: max N ataques por minuto
+                const elapsedMin = (Date.now() - startMs) / 60000;
+                if (sent / Math.max(elapsedMin, 1/60) > ATCFG.maxAttacksPerMin) {
+                    logB(`Rate limit ${ATCFG.maxAttacksPerMin}/min — pausando 10s`);
+                    await sleepB(10000);
+                }
+                logB(`Disparando #${sent+1}/${plan.length}: vila ${item.source.name} → ${item.target.name} (${item.target.x}|${item.target.y}) NT+${item.units.heavy}CP`);
+                const res = await sendAttackViaPlaceB(item.source.id, item.target.x, item.target.y, item.units, false);
+                if (res.ok) {
+                    sent++;
+                    BSTATE.attackHistory[item.target.id] = (BSTATE.attackHistory[item.target.id] || 0) + 1;
+                    lsSetB(LS_ATTACK_HISTORY, BSTATE.attackHistory);
+                } else {
+                    errors++;
+                    logB(`  ❌ FALHOU: ${res.error}`);
+                    if (/captcha|bot/i.test(res.error || '')) {
+                        BSTATE.attackRunning = false;
+                        logB('🛑 CAPTCHA/BOT detectado — parando');
+                        break;
+                    }
+                    if (errors >= 5 && sent === 0) {
+                        BSTATE.attackRunning = false;
+                        logB('🛑 5 erros sem 1 sucesso — abortando pra investigar');
+                        break;
+                    }
+                }
+                await sleepB(ATCFG.minPauseMs + Math.floor(Math.random() * 1000));
+            }
+            BSTATE.attackRunning = false;
+            logB(`Conquista terminada: ${sent} disparados, ${errors} erros`);
+            alert(`Conquista terminada:\n\n✅ ${sent} ataques disparados\n❌ ${errors} erros\n\nConfere em /game.php?screen=overview_villages&mode=commands`);
         }
 
         // ===== TROPAS (overview/units) =====
@@ -2334,6 +2568,16 @@ console.log('[TW-FARM] stub carregado v0.7.9 — injetando main world script');
     <div style="font-size:9px;color:#666;margin-top:2px;" id="tw-bld-troops-meta"></div>
   </div>
 
+  <div style="background:#3d0a0a;color:#fff;border:2px solid #7a1f1f;padding:6px;margin-bottom:6px;border-radius:2px;">
+    <div style="font-weight:bold;margin-bottom:4px;">🎯 Conquistar Jogador (v0.8.0)</div>
+    <div style="display:flex;gap:4px;">
+      <button id="tw-atk-plan" style="flex:2;background:#a02020;color:white;border:none;padding:6px;cursor:pointer;font-weight:bold;border-radius:2px;font-size:11px;">📋 Planejar Ataque</button>
+      <button id="tw-atk-stop" style="flex:1;background:#444;color:white;border:none;padding:6px;cursor:pointer;font-weight:bold;border-radius:2px;font-size:11px;">🛑 STOP</button>
+    </div>
+    <div style="font-size:9px;color:#ccc;margin-top:4px;">Status: <span id="tw-atk-status">ocioso</span></div>
+    <div style="font-size:9px;color:#ccc;">Cuidado: dispara ataques REAIS. Sempre confirma o plano antes.</div>
+  </div>
+
   <div style="font-weight:bold;color:#1f5d1f;margin:8px 0 3px;">🏗 Build Queue</div>
   <div style="display:flex;gap:4px;margin-bottom:4px;">
     <button id="tw-bld-start" style="flex:1;background:#1f7a1f;color:white;border:none;padding:5px;cursor:pointer;font-weight:bold;border-radius:2px;font-size:11px;">▶ Build</button>
@@ -2411,6 +2655,103 @@ console.log('[TW-FARM] stub carregado v0.7.9 — injetando main world script');
                 logB(`Encontradas ${v.length} vilas`);
                 updateVillagesPanelB();
             };
+            document.getElementById('tw-atk-stop').onclick = () => {
+                BSTATE.attackRunning = false;
+                document.getElementById('tw-atk-status').textContent = 'parando após disparo atual...';
+            };
+
+            document.getElementById('tw-atk-plan').onclick = async () => {
+                const $status = document.getElementById('tw-atk-status');
+                if (BSTATE.attackRunning) {
+                    alert('Já tem ataque rodando. Use STOP primeiro.');
+                    return;
+                }
+                if (!BSTATE.troopsOverview || !BSTATE.troopsOverview.rows) {
+                    alert('Rode "📊 Tropas" primeiro pra eu saber quem tem nobre + heavy disponível.');
+                    return;
+                }
+
+                const playerName = prompt(
+                    'Nome do jogador alvo (busca em /map/player.txt):\n\n' +
+                    'Ex: "Luis Fuerza", "luis", etc.\n' +
+                    'Se houver várias correspondências, vou pedir o nome exato.'
+                );
+                if (!playerName || !playerName.trim()) return;
+
+                $status.textContent = 'buscando jogador + planejando...';
+                const result = await planConquestB(playerName.trim());
+                if (!result) { $status.textContent = 'plano cancelado'; return; }
+
+                BSTATE.attackPlanLast = result;
+                wB.TW_ATTACK_PLAN = result;
+
+                const totalAttacks = result.plan.length;
+                const totalNobles = result.plan.length;
+                const totalHeavy = result.plan.reduce((s, p) => s + (p.units.heavy || 0), 0);
+                const sourcesUsed = new Set(result.plan.map(p => p.source.id)).size;
+                const distAvg = result.plan.length > 0
+                    ? (result.plan.reduce((s, p) => s + p.dist, 0) / result.plan.length).toFixed(1)
+                    : '0';
+
+                // Resumo por vila do alvo
+                const perTarget = {};
+                result.plan.forEach(p => {
+                    perTarget[p.target.id] = perTarget[p.target.id] || { name: p.target.name, coord: `(${p.target.x}|${p.target.y})`, count: 0 };
+                    perTarget[p.target.id].count++;
+                });
+                const targetCoverage = Object.values(perTarget);
+                const fullyCovered = targetCoverage.filter(t => t.count >= ATCFG.noblesPerTarget).length;
+                const partial = targetCoverage.filter(t => t.count > 0 && t.count < ATCFG.noblesPerTarget).length;
+                const uncovered = result.targets.length - targetCoverage.length;
+
+                console.log('%c═══ PLANO DE CONQUISTA ═══', 'color:#a02020;font-size:14px;font-weight:bold');
+                console.log('Alvo:', result.player);
+                console.log('Vilas do alvo:', result.targets);
+                console.log('Plano:', result.plan);
+                console.table(result.plan.map(p => ({
+                    alvo: `${p.target.name} (${p.target.x}|${p.target.y})`,
+                    nossa: p.source.name, dist: p.dist.toFixed(1),
+                    ataque: `${p.ataque}/${ATCFG.noblesPerTarget}`,
+                    NT: p.units.snob, CP: p.units.heavy,
+                })));
+
+                const summary =
+                    `🎯 PLANO DE CONQUISTA — ${result.player.name} (id ${result.player.id})\n\n` +
+                    `🏘 ${result.targets.length} vilas do alvo (${result.player.points} pts)\n` +
+                    `📋 ${totalAttacks} ataques planejados (${ATCFG.noblesPerTarget} por vila ideal)\n` +
+                    `  ✅ ${fullyCovered} vilas com cobertura COMPLETA (${ATCFG.noblesPerTarget} NT)\n` +
+                    `  ⚠️ ${partial} vilas com cobertura PARCIAL\n` +
+                    `  ❌ ${uncovered} vilas SEM cobertura (sem nossas vilas com NT+CP disponível)\n\n` +
+                    `💰 Recursos: ${totalNobles} nobres + ${totalHeavy.toLocaleString('pt-BR')} CP\n` +
+                    `🏰 ${sourcesUsed} nossas vilas vão disparar (dist média ${distAvg}c)\n` +
+                    `⏱ Tempo estimado: ~${Math.ceil(totalAttacks * (ATCFG.minPauseMs/1000) / 60)} min (rate ${ATCFG.maxAttacksPerMin}/min)\n\n` +
+                    `Detalhes completos no console (F12) — também em window.TW_ATTACK_PLAN\n\n` +
+                    `CONFIRMA DISPARAR ATAQUES REAIS?\n` +
+                    `(Cancelar = só visualizar plano sem disparar)`;
+
+                if (!confirm(summary)) {
+                    $status.textContent = 'plano gerado, NÃO disparado (cancelado pelo user)';
+                    logB(`Plano gerado contra ${result.player.name}: ${totalAttacks} ataques. NÃO disparado.`);
+                    return;
+                }
+
+                // Segunda confirmação obrigatória
+                const second = prompt(
+                    `⚠️ ÚLTIMA CONFIRMAÇÃO\n\nVai disparar ${totalAttacks} ataques REAIS contra ${result.player.name}.\n\n` +
+                    `Pra confirmar, digite o nome do alvo EXATO:\n(esperado: "${result.player.name}")`
+                );
+                if (second !== result.player.name) {
+                    alert('Cancelado — nome não bate.');
+                    $status.textContent = 'cancelado (2ª confirmação)';
+                    return;
+                }
+
+                $status.textContent = 'DISPARANDO ataques (clique STOP pra parar)...';
+                logB(`🎯 INICIANDO conquista de ${result.player.name}: ${totalAttacks} ataques`);
+                await executeConquestPlanB(result.plan);
+                $status.textContent = 'concluído';
+            };
+
             document.getElementById('tw-bld-troops').onclick = async () => {
                 const $display = document.getElementById('tw-bld-troops-display');
                 const $totals = document.getElementById('tw-bld-troops-totals');
