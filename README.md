@@ -32,14 +32,26 @@ Userscript privado pro Tribal Wars BR mundo 142. Roda no Chrome via Tampermonkey
   - `[NT?]` velocidade ≥31 (snob é a unidade mais lenta)
 - Não roda em polling automático (risco de detecção). Operador clica quando quer.
 
+### 🏗 Build + Recruit (mundo speed) — adicionado em v0.4.0
+
+Integrado **dentro do mesmo userscript** (mesmo `tw-farm.user.js`). Sem segundo script no Tampermonkey. Foco em mundo speed onde farm não compensa e o gargalo é construir + recrutar rápido em todas as vilas.
+
+- **Build Queue** — itera `game_data.villages`, para cada uma lê `screen=main`, identifica próximo prédio do template que ainda não foi atingido (e não está na fila), enfileira via `ajaxaction=upgrade_building`. Loop a cada 90s (ajustável). Multi-vila nativo, sem trocar contexto.
+- **Template editável** — array JSON `[["wood", 5], ["main", 3], ...]`. Default vem com 48 entradas otimizadas para off rush em mundo speed. Persiste em localStorage.
+- **Recruiter** — para cada vila, GET barracks/stable/garage, parser dos custos de cada unidade, calcula quantas dá pra recrutar com base em mix de pesos + % dos recursos atuais. POST de recrutamento por screen.
+- **Mix editável** — objeto JSON `{"axe":0.4,"light":0.3,"spy":0.05}`. Pesos relativos. Default off-balanceado (40% axe, 30% light, 10% spear/heavy, 5% sword/spy).
+- **Guard-rails**: respeita slots de fila (2 sem Premium, 5 com), respeita pop livre, cap por unidade por ciclo (200 default).
+- **Painel à esquerda** (o de farm fica à direita, não colidem). Lista de vilas + log das 30 últimas ações.
+
 ## Instalação no Chrome
 
 1. Instalar **Tampermonkey**: <https://chromewebstore.google.com/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo>
 2. Confirmar que está ativo (ícone na barra)
-3. Clicar em **[Install raw script](https://raw.githubusercontent.com/ThCarmo/tribal-wars-userscript/main/src/tw-farm.user.js)**
+3. Instalar o script único (Farm + Build + Recruit + Tagger juntos): **[Install raw](https://raw.githubusercontent.com/ThCarmo/tribal-wars-userscript/main/src/tw-farm.user.js)**
 4. Tampermonkey abre página de confirmação → clicar **Instalar**
-5. Abrir o jogo: <https://br142.tribalwars.com.br/>, logar normalmente
-6. Painel aparece no canto superior direito da tela
+5. **Importante (Chrome MV3)**: chrome://extensions/ → Tampermonkey → Detalhes → "Acesso ao site" = **Em todos os sites** (se ficar em "Ao clicar", o script não injeta automaticamente)
+6. Abrir o jogo, logar normalmente
+7. Painel de farm aparece à direita (laranja), painel de build aparece à esquerda (verde)
 
 ## Uso
 
@@ -55,6 +67,20 @@ Userscript privado pro Tribal Wars BR mundo 142. Roda no Chrome via Tampermonkey
 1. Em qualquer tela do jogo
 2. Clicar **⟳ Analisar** — bot busca os incomings e etiqueta cada um
 3. Voltar pro overview de incomings pra ver as labels aplicadas
+
+### Build (mundo speed)
+1. Em **qualquer tela** do jogo (não precisa estar na sede)
+2. Conferir no painel verde à esquerda que o número de vilas detectadas bate
+3. Rodar **▷ 1 ciclo só (debug)** primeiro — olhar o log das últimas 30 ações. Se aparecer "CSRF não encontrado", "fila cheia", "OK main→4" pra cada vila, está OK.
+4. Se OK: **▶ START BUILD** — entra em loop, processa todas as vilas a cada 90s
+5. Pra customizar a ordem: **✎ Editar template** abre um prompt com o array JSON atual. Buildings válidos: `main barracks stable garage snob smith place market wood stone iron farm storage hide wall watchtower statue`
+6. **■ STOP** para o loop após a vila atual
+
+### Recruit (mundo speed)
+1. Pré-requisito: a vila precisa ter quartel/estábulo construído (build cuida disso)
+2. **▷ 1 ciclo só (debug)** primeiro — confirma que parser de custos achou as unidades
+3. Se OK: **▶ START RECRUIT** — recruta 85% dos recursos disponíveis em cada vila por ciclo, conforme mix configurado
+4. **✎ Editar mix tropa** abre prompt com o JSON. Pesos relativos: `{"axe":0.4, "light":0.3, "spy":0.05}` significa 40% recursos para axe, 30% para light, 5% para spy
 
 ## Configuração do Tampermonkey pra auto-update
 

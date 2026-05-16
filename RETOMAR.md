@@ -1,21 +1,56 @@
 # RETOMAR — Tribal Wars Userscript
 
-> Checkpoint pra próxima sessão (Claude ou humano). Última atualização: **2026-05-14, fim da tarde**.
+> Checkpoint pra próxima sessão (Claude ou humano). Última atualização: **2026-05-16**.
 
-## Status atual: ✅ OPERACIONAL na v0.3.3
+## Status atual
 
-Userscript funcionando em produção. Usuário (Dr. Thiago, jogador `ThCarmo`) rodando "Atacar Todos" no mundo BR142, vila 86934 (821|403).
+- **tw-farm.user.js v0.4.0** ✅ Farm OPERACIONAL (BR142) + 🆕 Build/Recruit RECÉM-INTEGRADO (não testado).
+  - Em 2026-05-16: Dr. Thiago entrou em mundo speed novo, pediu construção+recrutamento. Foi criado `tw-build.user.js` como arquivo separado, depois **fundido dentro do tw-farm** a pedido do usuário (não queria gerenciar 2 scripts no Tampermonkey). Build vive num IIFE isolado com sufixo `B`/`B...` em todas as variáveis pra não colidir com farm.
+
+Usuário (Dr. Thiago, jogador `ThCarmo`) opera 2 mundos:
+- **BR142**: mundo "normal", usa farm + tagger
+- **Mundo speed novo (URL ainda pendente)**: usa build + recruit. Sem necessidade de farm.
 
 ## O que existe e funciona
 
-| Módulo | Status | Botão no painel |
+**Arquivo único agora**: `src/tw-farm.user.js` (v0.4.0). 2 painéis num só userscript: Farm (laranja, direita) + Build (verde, esquerda).
+
+### Painel Farm (direita, laranja) — funciona em BR142
+
+| Módulo | Status | Botão |
 |---|---|---|
 | **Farm** via Assistente de Saque (am_farm) | ✅ v0.2.5 | ▶ START / ■ STOP / ⟳ RESYNC |
 | **Map Scan** — lê `/map/village.txt`, lista barbáros no raio | ✅ v0.3.0 | 🔍 Buscar Barbs |
-| **Praça Sender** — `sendFarmViaPlace(targetId, light, spy, dryRun)` flow 3-step | ✅ v0.3.1 | 🧪 Testar 1 (dry-run) / 🎯 Atacar 1 (REAL) |
+| **Praça Sender** — `sendFarmViaPlace(targetId, light, spy, dryRun)` flow 3-step | ✅ v0.3.1 | 🧪 Testar 1 / 🎯 Atacar 1 (REAL) |
 | **Atacar Todos** — loop sobre scan com guard-rails | ✅ v0.3.2 | 💥 ATACAR TODOS / ■ PARAR |
 | Auto-resync se inputs zerados + razão de parada no log | ✅ v0.3.3 | — |
 | **Tagger** — classifica incomings por velocidade | ✅ v0.2.0 | ⟳ Analisar / ■ STOP |
+
+### Painel Build (esquerda, verde) — 🆕 v0.4.0, focado em mundo speed
+
+| Módulo | Status | Botão |
+|---|---|---|
+| **Build Queue** — itera todas as vilas, lê sede, enfileira próximo prédio do template | 🆕 v0.4.0 | ▶ START BUILD / ■ STOP / ▷ 1 ciclo |
+| **Template editável** — JSON `[["wood", 5], ["main", 3], ...]`, persiste em localStorage chave `twBuildTemplate` | 🆕 v0.4.0 | ✎ Editar template |
+| **Recruiter** — itera vilas, GET barracks/stable/garage, POST recrutamento por mix | 🆕 v0.4.0 | ▶ START RECRUIT / ■ STOP / ▷ 1 ciclo |
+| **Mix editável** — JSON `{"axe":0.4,"light":0.3}`, peso relativo, persiste em `twBuildTroopMix` | 🆕 v0.4.0 | ✎ Editar mix tropa |
+| **Multi-vila nativo** — usa `game_data.villages` direto, sem trocar contexto do jogo | 🆕 v0.4.0 | — |
+| **Painel à esquerda** com lista de vilas + log das 30 últimas ações | 🆕 v0.4.0 | — |
+
+**Arquitetura do build dentro do farm**: tudo num IIFE `buildRecruitModule()` no fim do `mainWorldScript`. Variáveis sufixadas com `B` ou nomes próprios (`BCFG`, `BSTATE`, `logB`, `sleepB`, `jitterB`, `injectPanelB`, `initB`) pra zero colisão com farm. Pode ler isso de cima a baixo sem confundir com o farm.
+
+**Defaults out-of-the-box:**
+- Ciclo: 90s (mundo speed). Para mundo normal subir pra 600s.
+- Slots fila: 2 (sem Premium). Quem tem Premium: subir pra 5.
+- Recruit %: 85% dos recursos disponíveis por ciclo, cap 200/unidade.
+- Mix: 40% axe + 30% light + 10% spear + 10% heavy + 5% sword + 5% spy (off com defesa mínima).
+- Template build: 48 entradas, "off rush" — main 3 → recursos 5 → barracks/smith → recursos 8 → barracks/main 10 → stable → ... → muralha → garage → snob.
+
+**Pendências esperadas no 1º shake-down:**
+- Parser de nível (`parseCurrentLevels`) pode falhar se DOM do mundo speed for diferente do BR142 — verificar console F12.
+- Endpoint `ajaxaction=upgrade_building` pode ter response diferente — checar `enqueueBuild` rejeitando válidos como ambíguos.
+- Recrutamento parser de custos (`parseUnitCosts`) usa `data-costs` em JSON; se mundo não expõe, cai no fallback `.cost_wood` etc — pode falhar e logar "sem custos parseáveis".
+- Se falhar: o ciclo "1 ciclo só (debug)" não bloqueia, mostra no log o que deu — usar pra calibrar antes de deixar loopando.
 
 ## Configuração padrão atual
 
@@ -64,11 +99,21 @@ Repo: https://github.com/ThCarmo/tribal-wars-userscript (público)
 
 ### Para o usuário (Dr. Thiago, jogo)
 
+**Farm (BR142):**
 1. Abrir `br142.tribalwars.com.br`, logar
-2. Tampermonkey deve ter script ativo (atualizar via "Verificar atualizações" se quiser pegar versão nova)
+2. Tampermonkey deve ter `tw-farm` ativo (atualizar via "Verificar atualizações" se quiser pegar versão nova)
 3. Banner vermelho no topo confirma versão ativa
 4. Painel canto superior direito tem 3 blocos: Farm, Map Scan, Tagger
 5. Fluxo padrão de farm: 🔍 Buscar Barbs → ⟳ resync (Farm) → 💥 ATACAR TODOS
+
+**Build + Recruit (mundo speed novo):**
+1. Já está dentro do `tw-farm.user.js` v0.4.0 — não precisa instalar segundo script. Basta atualizar o script existente no Tampermonkey (Verificar atualizações, OU copiar+colar conteúdo do raw).
+2. Abrir o servidor do mundo speed, logar
+3. Banner vermelho do farm agora diz "v0.4.0 — painéis: Farm à direita, Build à esquerda"
+4. Painel verde aparece à ESQUERDA com seções Build Queue + Recruit + lista de vilas + log
+5. **Antes de soltar**: rodar 1× "▷ 1 ciclo só (debug)" do Build e do Recruit — olhar log no painel ou F12 console pra ver se prédios + custos estão sendo parseados certo
+6. Se OK: clicar ▶ START BUILD e ▶ START RECRUIT — vai rodar até clicar ■ STOP
+7. Pra customizar: ✎ Editar template (lista de prédios) e ✎ Editar mix tropa
 
 ### Para o agente que pegar essa sessão
 

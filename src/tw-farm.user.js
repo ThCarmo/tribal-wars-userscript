@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         TW Farm + Tagger — ThCarmo
+// @name         TW Farm + Build + Recruit — ThCarmo
 // @namespace    https://github.com/ThCarmo/tribal-wars-userscript
-// @version      0.3.3
-// @description  Farm (2L+1S, raio configurável) + Incoming Tagger (classifica tropa por velocidade)
+// @version      0.4.0
+// @description  Farm (2L+1S, raio configurável) + Build Queue (multi-vila) + Recruit + Incoming Tagger
 // @author       Thiago Carmo
 // @match        *://*.tribalwars.com.br/*
 // @match        *://*.tribalwars.com.pt/*
@@ -17,7 +17,7 @@
 // Tampermonkey 5.5 stable ignora @inject-into page. Workaround clássico:
 // criar um <script> tag com o código real, anexar ao DOM, o browser executa
 // no MAIN WORLD (mesmo contexto que o DevTools console). Funciona em qualquer TM.
-console.log('[TW-FARM] stub carregado v0.3.3 — injetando main world script');
+console.log('[TW-FARM] stub carregado v0.4.0 — injetando main world script');
 (function injectMainWorldScript() {
     function mainWorldScript() {
         'use strict';
@@ -32,7 +32,7 @@ console.log('[TW-FARM] stub carregado v0.3.3 — injetando main world script');
             const b = document.createElement('div');
             b.id = 'tw-farm-banner-prova';
             b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#d40000;color:#fff;padding:12px;font:bold 14px Arial;text-align:center;border-bottom:3px solid #000;box-shadow:0 2px 10px rgba(0,0,0,0.6);';
-            b.innerHTML = `✅ TW Farm userscript v0.3.3 ATIVO (auto-resync) — URL: ${location.href.slice(0, 80)} <span style="margin-left:20px;cursor:pointer;text-decoration:underline;" id="tw-farm-banner-close">[fechar]</span>`;
+            b.innerHTML = `✅ TW Farm + Build v0.4.0 ATIVO — painéis: Farm à direita, Build à esquerda <span style="margin-left:20px;cursor:pointer;text-decoration:underline;" id="tw-farm-banner-close">[fechar]</span>`;
             (document.body || document.documentElement).insertAdjacentElement('afterbegin', b);
             document.getElementById('tw-farm-banner-close').onclick = () => b.remove();
         };
@@ -41,7 +41,7 @@ console.log('[TW-FARM] stub carregado v0.3.3 — injetando main world script');
         } else {
             document.addEventListener('DOMContentLoaded', showBanner);
         }
-        console.log('[TW-FARM] v0.3.3 carregado (script-tag bridge, main world) em', location.href);
+        console.log('[TW-FARM] v0.4.0 carregado (script-tag bridge, main world) em', location.href);
     } catch (e) {
         console.error('[TW-FARM] banner-prova falhou:', e);
     }
@@ -1001,7 +1001,751 @@ console.log('[TW-FARM] stub carregado v0.3.3 — injetando main world script');
     } else {
         init();
     }
-    }
+
+    // =====================================================================
+    // ========= MÓDULO BUILD + RECRUIT (escopo isolado via IIFE) ==========
+    // =====================================================================
+    // Adicionado em v0.4.0 — construir + recrutar em todas as vilas pra mundo
+    // speed onde farm não compensa. Coexiste com o farm acima sem colidir.
+    // Painel: à esquerda. Verde. Independente do painel laranja do farm.
+
+    (function buildRecruitModule() {
+        'use strict';
+
+        const wB = window;
+        const sleepB = ms => new Promise(r => setTimeout(r, ms));
+
+        const BCFG = {
+            cycleMs: 90000,
+            jitterMs: [1500, 4500],
+            perVillagePauseMs: [3000, 6000],
+            queueSlots: 2,
+            recruitResourcePct: 0.85,
+            recruitMaxPerUnit: 200,
+            troopMix: {
+                spear:  0.10,
+                sword:  0.05,
+                axe:    0.40,
+                archer: 0.00,
+                spy:    0.05,
+                light:  0.30,
+                heavy:  0.10,
+            },
+            debugLog: true,
+        };
+
+        const jitterB = (range = BCFG.jitterMs) =>
+            Math.floor(range[0] + Math.random() * (range[1] - range[0]));
+
+        const DEFAULT_BUILD_TEMPLATE = [
+            ['main', 3], ['wood', 5], ['stone', 5], ['iron', 4],
+            ['farm', 3], ['storage', 3], ['barracks', 1],
+            ['main', 5], ['wood', 8], ['stone', 8], ['iron', 7],
+            ['farm', 5], ['storage', 5], ['hide', 5],
+            ['smith', 1], ['barracks', 5], ['main', 10], ['smith', 5],
+            ['wood', 12], ['stone', 12], ['iron', 10],
+            ['farm', 10], ['storage', 10],
+            ['stable', 3], ['place', 1], ['market', 3],
+            ['stable', 10], ['barracks', 15], ['main', 15], ['smith', 15],
+            ['wood', 20], ['stone', 20], ['iron', 18],
+            ['farm', 20], ['storage', 20], ['stable', 15],
+            ['wall', 5], ['wall', 10], ['wall', 15], ['wall', 20],
+            ['garage', 1], ['garage', 5], ['snob', 1],
+            ['market', 10],
+            ['wood', 30], ['stone', 30], ['iron', 30],
+            ['farm', 30], ['storage', 30],
+        ];
+
+        const LS_TEMPLATE = 'twBuildTemplate';
+        const LS_TROOP_MIX = 'twBuildTroopMix';
+
+        const lsGetB = (key, fallback) => {
+            try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }
+            catch (e) { return fallback; }
+        };
+        const lsSetB = (key, value) => {
+            try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
+        };
+
+        const BSTATE = {
+            buildRunning: false,
+            recruitRunning: false,
+            cycleCount: 0,
+            lastCycleAt: null,
+            log: [],
+            buildTemplate: lsGetB(LS_TEMPLATE, DEFAULT_BUILD_TEMPLATE),
+            troopMix: lsGetB(LS_TROOP_MIX, BCFG.troopMix),
+            villageStatuses: {},
+        };
+
+        const nowStrB = () => new Date().toTimeString().slice(0, 8);
+
+        function logB(...args) {
+            if (BCFG.debugLog) console.log('%c[TW-BUILD]', 'color:#1f5d1f;font-weight:bold', ...args);
+            const line = `${nowStrB()} ${args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ')}`;
+            BSTATE.log.unshift(line);
+            if (BSTATE.log.length > 30) BSTATE.log.length = 30;
+            updateLogPanelB();
+        }
+
+        const getGameDataB = () => wB.game_data || null;
+
+        function getAllVillagesB() {
+            const gd = getGameDataB();
+            if (!gd) return [];
+            if (Array.isArray(gd.villages)) {
+                return gd.villages.map(v => ({
+                    id: String(v.id), name: v.name || `Vila ${v.id}`, x: v.x, y: v.y,
+                }));
+            }
+            if (gd.player && gd.player.villages) {
+                const pv = gd.player.villages;
+                if (Array.isArray(pv)) {
+                    return pv.map(v => ({
+                        id: String(v.id || v), name: v.name || `Vila ${v.id || v}`, x: v.x, y: v.y,
+                    }));
+                }
+                return Object.entries(pv).map(([id, v]) => ({
+                    id: String(id), name: v.name || `Vila ${id}`, x: v.x, y: v.y,
+                }));
+            }
+            if (gd.village && gd.village.id) {
+                return [{ id: String(gd.village.id), name: gd.village.name || 'Vila ativa', x: gd.village.x, y: gd.village.y }];
+            }
+            return [];
+        }
+
+        async function fetchMainScreenB(villageId) {
+            const url = `/game.php?village=${villageId}&screen=main`;
+            const resp = await fetch(url, { credentials: 'same-origin' });
+            if (!resp.ok) throw new Error(`HTTP ${resp.status} main`);
+            const html = await resp.text();
+            const doc = new DOMParser().parseFromString(html, 'text/html');
+            return { html, doc };
+        }
+
+        function parseResourcesB(doc) {
+            const num = sel => {
+                const el = doc.querySelector(sel);
+                if (!el) return null;
+                const n = parseInt((el.textContent || el.getAttribute('value') || '').replace(/[^\d]/g, ''), 10);
+                return Number.isFinite(n) ? n : null;
+            };
+            return {
+                wood:    num('#wood') ?? num('#wood_value') ?? 0,
+                stone:   num('#stone') ?? num('#stone_value') ?? 0,
+                iron:    num('#iron') ?? num('#iron_value') ?? 0,
+                popUsed: num('#pop_current_label') ?? 0,
+                popMax:  num('#pop_max_label') ?? 0,
+                storageMax: num('#storage') ?? 0,
+            };
+        }
+
+        function parseCsrfB(doc) {
+            const body = doc.querySelector('body');
+            if (body && body.getAttribute('data-csrf')) return body.getAttribute('data-csrf');
+            const inp = doc.querySelector('input[name="h"]');
+            if (inp && inp.value) return inp.value;
+            const m = doc.documentElement.outerHTML.match(/csrf_token\s*[:=]\s*['"]([a-f0-9]+)['"]/i);
+            if (m) return m[1];
+            return null;
+        }
+
+        function parseCurrentLevelsB(doc) {
+            const out = {};
+            const rows = doc.querySelectorAll('tr[id^="main_buildrow_"]');
+            rows.forEach(row => {
+                const id = row.id.replace('main_buildrow_', '');
+                let level = 0;
+                const nextLevelEl = row.querySelector('[data-level-next]');
+                if (nextLevelEl) {
+                    const n = parseInt(nextLevelEl.getAttribute('data-level-next'), 10);
+                    if (Number.isFinite(n)) level = Math.max(0, n - 1);
+                }
+                if (level === 0) {
+                    const spanLvl = row.querySelector('.level, span.level-display, td.lit-item');
+                    if (spanLvl) {
+                        const m = (spanLvl.textContent || '').match(/(\d+)/);
+                        if (m) level = parseInt(m[1], 10);
+                    }
+                }
+                if (level === 0) {
+                    const m = (row.innerText || row.textContent || '').match(/N[íi]vel\s+(\d+)/i);
+                    if (m) level = parseInt(m[1], 10);
+                }
+                out[id] = level;
+            });
+            return out;
+        }
+
+        function parseBuildQueueB(doc) {
+            const queue = [];
+            const rows = doc.querySelectorAll('#buildqueue tbody tr, table.buildorder_table tbody tr, #build_queue tbody tr');
+            rows.forEach(row => {
+                const text = (row.innerText || row.textContent || '').trim();
+                if (!text) return;
+                if (/aguard|cancel|tempo|^Constru/i.test(text) && !/N[íi]vel\s+\d/i.test(text)) return;
+                const ptMap = {
+                    'Sede da Aldeia': 'main', 'Sede': 'main',
+                    'Quartel': 'barracks',
+                    'Est[áa]bulo': 'stable',
+                    'Oficina': 'garage',
+                    'Igreja': 'church',
+                    'Academia': 'snob',
+                    'Ferreiro': 'smith',
+                    'Pra[çc]a de Reuni[õo]es': 'place', 'Praça': 'place',
+                    'Mercado': 'market',
+                    'Bosque': 'wood', 'Madeireiro': 'wood',
+                    'Poço de Argila': 'stone', 'Po[çc]o': 'stone',
+                    'Mina de Ferro': 'iron',
+                    'Fazenda': 'farm',
+                    'Armaz[ée]m': 'storage',
+                    'Esconderijo': 'hide',
+                    'Muralha': 'wall',
+                    'Torre de Vigia': 'watchtower',
+                    'Est[áa]tua': 'statue',
+                };
+                let building = null;
+                for (const [pattern, id] of Object.entries(ptMap)) {
+                    if (new RegExp(pattern, 'i').test(text)) { building = id; break; }
+                }
+                const lvlMatch = text.match(/N[íi]vel\s+(\d+)/i);
+                if (building && lvlMatch) {
+                    queue.push({ building, targetLevel: parseInt(lvlMatch[1], 10) });
+                }
+            });
+            return queue;
+        }
+
+        function pickNextBuildB(template, current, queue) {
+            const effective = { ...current };
+            for (const q of queue) {
+                if (!effective[q.building] || effective[q.building] < q.targetLevel) {
+                    effective[q.building] = q.targetLevel;
+                }
+            }
+            for (const [building, target] of template) {
+                const cur = effective[building] || 0;
+                if (cur < target) {
+                    return { building, fromLevel: cur, toLevel: cur + 1 };
+                }
+            }
+            return null;
+        }
+
+        async function enqueueBuildB(villageId, building, csrf) {
+            const url = `/game.php?village=${villageId}&screen=main&ajaxaction=upgrade_building&type=main&h=${csrf}`;
+            const fd = new FormData();
+            fd.append('id', building);
+            fd.append('force', '1');
+            fd.append('destroy', '0');
+            fd.append('source', String(villageId));
+            try {
+                const resp = await fetch(url, {
+                    method: 'POST', body: fd, credentials: 'same-origin',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'TribalWars-Ajax': '1',
+                        'Accept': 'application/json, text/javascript, */*; q=0.01',
+                    },
+                });
+                const text = await resp.text();
+                let body;
+                try { body = JSON.parse(text); } catch (e) { body = null; }
+                if (body && body.error && body.error.length) {
+                    return { ok: false, error: String(body.error[0]).slice(0, 150) };
+                }
+                if (body && body.response) return { ok: true };
+                if (/error_box|insufficient|recursos|n[ãa]o.+suficiente|premium/i.test(text)) {
+                    const m = text.match(/<div[^>]*error[^>]*>([\s\S]{0,200})<\/div>/i);
+                    return { ok: false, error: (m ? m[1] : 'erro desconhecido').replace(/<[^>]+>/g, '').trim().slice(0, 150) };
+                }
+                if (resp.ok) return { ok: true, ambig: true };
+                return { ok: false, error: `HTTP ${resp.status}` };
+            } catch (e) {
+                return { ok: false, error: e.message || String(e) };
+            }
+        }
+
+        async function processVillageBuildB(village) {
+            const status = BSTATE.villageStatuses[village.id] || (BSTATE.villageStatuses[village.id] = {
+                name: village.name, coord: `(${village.x}|${village.y})`,
+                lastBuild: '-', lastRecruit: '-', status: 'pendente'
+            });
+            status.status = 'lendo sede';
+            updateVillagesPanelB();
+            let main;
+            try { main = await fetchMainScreenB(village.id); }
+            catch (e) {
+                status.status = `erro fetch: ${e.message}`;
+                logB(`Vila ${village.name}: falha ao ler sede:`, e.message);
+                return;
+            }
+            const csrf = parseCsrfB(main.doc);
+            if (!csrf) {
+                status.status = 'sem CSRF';
+                logB(`Vila ${village.name}: CSRF não encontrado`);
+                return;
+            }
+            const current = parseCurrentLevelsB(main.doc);
+            const queue = parseBuildQueueB(main.doc);
+            const slotsAvailable = BCFG.queueSlots - queue.length;
+            if (slotsAvailable <= 0) {
+                status.status = `fila cheia (${queue.length}/${BCFG.queueSlots})`;
+                logB(`Vila ${village.name}: fila cheia`);
+                return;
+            }
+            const next = pickNextBuildB(BSTATE.buildTemplate, current, queue);
+            if (!next) {
+                status.status = 'template concluído ✓';
+                logB(`Vila ${village.name}: todos os prédios do template já atingiram nível alvo`);
+                return;
+            }
+            status.status = `tentando ${next.building}→${next.toLevel}`;
+            updateVillagesPanelB();
+            const res = await enqueueBuildB(village.id, next.building, csrf);
+            if (res.ok) {
+                status.lastBuild = `${next.building}→${next.toLevel} (${nowStrB()})`;
+                status.status = `OK ${next.building}→${next.toLevel}${res.ambig ? ' (?)' : ''}`;
+                logB(`Vila ${village.name}: enfileirado ${next.building} nível ${next.toLevel}`);
+            } else {
+                status.status = `falhou ${next.building}: ${res.error}`;
+                logB(`Vila ${village.name}: erro ${next.building}: ${res.error}`);
+            }
+            updateVillagesPanelB();
+        }
+
+        async function buildLoopB() {
+            logB(`Build loop iniciado. Ciclo=${BCFG.cycleMs/1000}s, slots/vila=${BCFG.queueSlots}`);
+            while (BSTATE.buildRunning) {
+                const villages = getAllVillagesB();
+                if (villages.length === 0) {
+                    logB('Sem vilas detectadas — aguardando 60s');
+                    await sleepB(60000);
+                    continue;
+                }
+                logB(`Ciclo ${++BSTATE.cycleCount}: ${villages.length} vilas`);
+                BSTATE.lastCycleAt = Date.now();
+                for (const v of villages) {
+                    if (!BSTATE.buildRunning) break;
+                    await processVillageBuildB(v);
+                    await sleepB(jitterB(BCFG.perVillagePauseMs));
+                }
+                if (!BSTATE.buildRunning) break;
+                updateMainPanelB();
+                logB(`Aguardando ${BCFG.cycleMs/1000}s pro próximo ciclo`);
+                const waitUntil = Date.now() + BCFG.cycleMs;
+                while (Date.now() < waitUntil && BSTATE.buildRunning) {
+                    await sleepB(1000);
+                }
+            }
+            logB('Build loop parado');
+        }
+
+        // ============ RECRUIT ============
+
+        const RECRUIT_SCREENS = {
+            barracks: ['spear', 'sword', 'axe', 'archer'],
+            stable:   ['spy', 'light', 'marcher', 'heavy'],
+            garage:   ['ram', 'catapult'],
+        };
+
+        async function fetchRecruitScreenB(villageId, screen) {
+            const url = `/game.php?village=${villageId}&screen=${screen}`;
+            const resp = await fetch(url, { credentials: 'same-origin' });
+            if (!resp.ok) throw new Error(`HTTP ${resp.status} ${screen}`);
+            const html = await resp.text();
+            const doc = new DOMParser().parseFromString(html, 'text/html');
+            return { html, doc };
+        }
+
+        function parseUnitCostsB(doc) {
+            const out = {};
+            doc.querySelectorAll('[data-unit]').forEach(el => {
+                const u = el.getAttribute('data-unit');
+                const c = el.getAttribute('data-costs');
+                if (c) {
+                    try {
+                        const parsed = JSON.parse(c);
+                        out[u] = { wood: parsed.wood || 0, stone: parsed.stone || 0, iron: parsed.iron || 0, pop: parsed.pop || 1 };
+                    } catch (e) {}
+                }
+            });
+            if (Object.keys(out).length === 0) {
+                doc.querySelectorAll('input[name][type="number"], input[name][type="text"]').forEach(inp => {
+                    const name = inp.getAttribute('name');
+                    if (!name || !/^[a-z]+$/.test(name)) return;
+                    const tr = inp.closest('tr');
+                    if (!tr) return;
+                    const woodEl = tr.querySelector('.cost_wood, [class*="wood"]');
+                    const stoneEl = tr.querySelector('.cost_stone, [class*="stone"]');
+                    const ironEl = tr.querySelector('.cost_iron, [class*="iron"]');
+                    const popEl = tr.querySelector('.cost_pop, [class*="pop"]');
+                    const num = el => el ? parseInt((el.textContent || '').replace(/[^\d]/g, ''), 10) || 0 : 0;
+                    if (woodEl || stoneEl || ironEl) {
+                        out[name] = { wood: num(woodEl), stone: num(stoneEl), iron: num(ironEl), pop: num(popEl) || 1 };
+                    }
+                });
+            }
+            return out;
+        }
+
+        function parseRecruitFormB(doc) {
+            const form = doc.querySelector('form#train_form, form[action*="mode=train"], form[name="train_form"]');
+            if (!form) return null;
+            const action = form.getAttribute('action') || '';
+            const csrf = parseCsrfB(doc);
+            const hidden = {};
+            form.querySelectorAll('input[type=hidden]').forEach(inp => {
+                if (inp.name) hidden[inp.name] = inp.value || '';
+            });
+            return { form, action, csrf, hidden };
+        }
+
+        function computeRecruitAmountsB(resources, mix, costs, maxPerUnit, popFree) {
+            const result = {};
+            const validUnits = Object.entries(mix).filter(([u, w]) => w > 0 && costs[u]);
+            if (validUnits.length === 0) return result;
+            const totalWeight = validUnits.reduce((s, [, w]) => s + w, 0);
+            const budget = {
+                wood: Math.floor(resources.wood * BCFG.recruitResourcePct),
+                stone: Math.floor(resources.stone * BCFG.recruitResourcePct),
+                iron: Math.floor(resources.iron * BCFG.recruitResourcePct),
+                pop: popFree,
+            };
+            for (const [unit, weight] of validUnits) {
+                const c = costs[unit];
+                const share = weight / totalWeight;
+                const maxByWood  = c.wood  > 0 ? Math.floor(budget.wood  * share / c.wood)  : Infinity;
+                const maxByStone = c.stone > 0 ? Math.floor(budget.stone * share / c.stone) : Infinity;
+                const maxByIron  = c.iron  > 0 ? Math.floor(budget.iron  * share / c.iron)  : Infinity;
+                const maxByPop   = c.pop   > 0 ? Math.floor(budget.pop   * share / c.pop)   : Infinity;
+                const qty = Math.max(0, Math.min(maxByWood, maxByStone, maxByIron, maxByPop, maxPerUnit));
+                if (qty > 0) result[unit] = qty;
+            }
+            return result;
+        }
+
+        async function recruitInVillageB(villageId, screen) {
+            let page;
+            try { page = await fetchRecruitScreenB(villageId, screen); }
+            catch (e) { return { ok: false, error: `fetch ${screen}: ${e.message}` }; }
+            const formInfo = parseRecruitFormB(page.doc);
+            if (!formInfo) return { ok: false, error: `${screen} sem form (prédio não construído?)` };
+            const costs = parseUnitCostsB(page.doc);
+            if (Object.keys(costs).length === 0) return { ok: false, error: `${screen} sem custos parseáveis` };
+
+            const resources = parseResourcesB(page.doc);
+            const popFree = Math.max(0, resources.popMax - resources.popUsed);
+            const mix = {};
+            for (const u of RECRUIT_SCREENS[screen]) {
+                if (BSTATE.troopMix[u] !== undefined) mix[u] = BSTATE.troopMix[u];
+            }
+            const amounts = computeRecruitAmountsB(resources, mix, costs, BCFG.recruitMaxPerUnit, popFree);
+            const totalUnits = Object.values(amounts).reduce((s, n) => s + n, 0);
+            if (totalUnits === 0) {
+                return { ok: true, sent: {}, note: 'nada a recrutar (recursos/pop insuficientes ou mix zero)' };
+            }
+            const fd = new FormData();
+            for (const [k, v] of Object.entries(formInfo.hidden)) fd.append(k, v);
+            for (const u of RECRUIT_SCREENS[screen]) {
+                fd.set(`units[${u}]`, String(amounts[u] || 0));
+            }
+            if (formInfo.csrf) fd.set('h', formInfo.csrf);
+
+            let action = formInfo.action;
+            if (!action) action = `/game.php?village=${villageId}&screen=${screen}&mode=train&action=train`;
+            if (!/action=train/.test(action) && !/mode=train/.test(action)) {
+                action += (action.includes('?') ? '&' : '?') + 'mode=train&action=train';
+            }
+            if (!action.includes(`village=${villageId}`)) {
+                action += (action.includes('?') ? '&' : '?') + `village=${villageId}`;
+            }
+            try {
+                const resp = await fetch(action, { method: 'POST', body: fd, credentials: 'same-origin' });
+                const text = await resp.text();
+                if (/error_box|insufficient|n[ãa]o.+suficiente/i.test(text)) {
+                    const m = text.match(/<div[^>]*error[^>]*>([\s\S]{0,200})<\/div>/i);
+                    return { ok: false, error: (m ? m[1] : 'erro').replace(/<[^>]+>/g, '').trim().slice(0, 150), sent: amounts };
+                }
+                return { ok: true, sent: amounts };
+            } catch (e) {
+                return { ok: false, error: e.message, sent: amounts };
+            }
+        }
+
+        async function processVillageRecruitB(village) {
+            const status = BSTATE.villageStatuses[village.id] || (BSTATE.villageStatuses[village.id] = {
+                name: village.name, coord: `(${village.x}|${village.y})`,
+                lastBuild: '-', lastRecruit: '-', status: 'pendente'
+            });
+            const summary = [];
+            for (const screen of Object.keys(RECRUIT_SCREENS)) {
+                if (!BSTATE.recruitRunning) break;
+                const res = await recruitInVillageB(village.id, screen);
+                if (res.ok && Object.keys(res.sent || {}).length > 0) {
+                    const parts = Object.entries(res.sent).map(([u, n]) => `${u}:${n}`).join(' ');
+                    summary.push(`${screen}[${parts}]`);
+                    logB(`Vila ${village.name} ${screen}: ${parts}`);
+                } else if (!res.ok) {
+                    logB(`Vila ${village.name} ${screen} falhou: ${res.error}`);
+                }
+                await sleepB(jitterB());
+            }
+            if (summary.length > 0) {
+                status.lastRecruit = `${summary.join(' ')} (${nowStrB()})`;
+            }
+            updateVillagesPanelB();
+        }
+
+        async function recruitLoopB() {
+            logB(`Recruit loop iniciado. Mix=${JSON.stringify(BSTATE.troopMix)}`);
+            while (BSTATE.recruitRunning) {
+                const villages = getAllVillagesB();
+                if (villages.length === 0) {
+                    logB('Recruit: sem vilas, aguardando');
+                    await sleepB(60000);
+                    continue;
+                }
+                for (const v of villages) {
+                    if (!BSTATE.recruitRunning) break;
+                    await processVillageRecruitB(v);
+                    await sleepB(jitterB(BCFG.perVillagePauseMs));
+                }
+                if (!BSTATE.recruitRunning) break;
+                logB(`Recruit: ciclo done, aguardando ${BCFG.cycleMs/1000}s`);
+                const waitUntil = Date.now() + BCFG.cycleMs;
+                while (Date.now() < waitUntil && BSTATE.recruitRunning) {
+                    await sleepB(1000);
+                }
+            }
+            logB('Recruit loop parado');
+        }
+
+        // ============ PAINEL ============
+
+        function injectPanelB() {
+            if (document.getElementById('tw-build-panel')) return;
+            const panel = document.createElement('div');
+            panel.id = 'tw-build-panel';
+            panel.innerHTML = `
+<div style="position:fixed;top:120px;left:10px;z-index:99998;background:#e9f0e0;border:2px solid #1f5d1f;padding:8px;font-family:Verdana,Arial;font-size:11px;width:320px;box-shadow:2px 2px 8px rgba(0,0,0,0.4);border-radius:3px;max-height:85vh;overflow-y:auto;">
+  <div style="font-weight:bold;border-bottom:1px solid #1f5d1f;margin-bottom:6px;color:#1f5d1f;">🏗 TW Build + Recruit (v0.4.0)</div>
+
+  <div style="font-weight:bold;color:#1f5d1f;margin:6px 0 3px;">⚙ Config global</div>
+  <div style="display:flex;gap:4px;align-items:center;margin-bottom:3px;flex-wrap:wrap;">
+    <span>Ciclo (s):</span>
+    <input id="tw-bld-cycle" type="number" value="${BCFG.cycleMs/1000}" min="30" max="3600" style="width:60px;font-size:10px;"/>
+    <span>Slots fila:</span>
+    <input id="tw-bld-slots" type="number" value="${BCFG.queueSlots}" min="1" max="5" style="width:40px;font-size:10px;"/>
+    <span title="% dos recursos disponíveis pra recrutar">Recrut %:</span>
+    <input id="tw-bld-recpct" type="number" value="${Math.round(BCFG.recruitResourcePct*100)}" min="10" max="100" style="width:50px;font-size:10px;"/>
+  </div>
+
+  <div style="font-weight:bold;color:#1f5d1f;margin:8px 0 3px;">🏗 Build Queue</div>
+  <div style="display:flex;gap:4px;margin-bottom:4px;">
+    <button id="tw-bld-start" style="flex:1;background:#1f7a1f;color:white;border:none;padding:6px;cursor:pointer;font-weight:bold;border-radius:2px;">▶ START BUILD</button>
+    <button id="tw-bld-stop" style="flex:1;background:#7a1f1f;color:white;border:none;padding:6px;cursor:pointer;font-weight:bold;border-radius:2px;">■ STOP</button>
+  </div>
+  <div style="display:flex;gap:4px;margin-bottom:4px;">
+    <button id="tw-bld-once" style="flex:1;background:#444;color:white;border:none;padding:4px;cursor:pointer;font-size:10px;border-radius:2px;">▷ 1 ciclo só (debug)</button>
+    <button id="tw-bld-edit-template" style="flex:1;background:#1f4d7a;color:white;border:none;padding:4px;cursor:pointer;font-size:10px;border-radius:2px;">✎ Editar template</button>
+  </div>
+  <div style="font-size:10px;">Build: <span id="tw-bld-status">parado</span> · Ciclos: <span id="tw-bld-cycles">0</span></div>
+
+  <div style="font-weight:bold;color:#1f5d1f;margin:8px 0 3px;">⚔ Recruit</div>
+  <div style="display:flex;gap:4px;margin-bottom:4px;">
+    <button id="tw-rec-start" style="flex:1;background:#7a4d1f;color:white;border:none;padding:6px;cursor:pointer;font-weight:bold;border-radius:2px;">▶ START RECRUIT</button>
+    <button id="tw-rec-stop" style="flex:1;background:#7a1f1f;color:white;border:none;padding:6px;cursor:pointer;font-weight:bold;border-radius:2px;">■ STOP</button>
+  </div>
+  <div style="display:flex;gap:4px;margin-bottom:4px;">
+    <button id="tw-rec-once" style="flex:1;background:#444;color:white;border:none;padding:4px;cursor:pointer;font-size:10px;border-radius:2px;">▷ 1 ciclo só (debug)</button>
+    <button id="tw-rec-edit-mix" style="flex:1;background:#1f4d7a;color:white;border:none;padding:4px;cursor:pointer;font-size:10px;border-radius:2px;">✎ Editar mix tropa</button>
+  </div>
+  <div style="font-size:10px;">Recruit: <span id="tw-rec-status">parado</span></div>
+  <div style="font-size:9px;color:#666;margin-top:2px;">Mix atual: <span id="tw-rec-mix-display">${formatMixB(BSTATE.troopMix)}</span></div>
+
+  <hr style="border:none;border-top:1px solid #1f5d1f;margin:8px 0 6px;">
+
+  <div style="font-weight:bold;color:#1f5d1f;margin-bottom:3px;">📊 Vilas (<span id="tw-bld-vcount">?</span>)</div>
+  <div id="tw-bld-villages" style="font-size:10px;max-height:180px;overflow-y:auto;border:1px solid #ccc;padding:4px;background:#fff;">aguardando...</div>
+
+  <hr style="border:none;border-top:1px solid #1f5d1f;margin:8px 0 6px;">
+
+  <div style="font-weight:bold;color:#1f5d1f;margin-bottom:3px;">📜 Log (últimas 30)</div>
+  <div id="tw-bld-log" style="font-size:9px;max-height:140px;overflow-y:auto;border:1px solid #ccc;padding:4px;background:#fff;font-family:monospace;white-space:pre-wrap;"></div>
+</div>`;
+            document.body.appendChild(panel);
+
+            document.getElementById('tw-bld-start').onclick = () => {
+                applyCfgFromPanelB();
+                if (BSTATE.buildRunning) { logB('Build já está rodando'); return; }
+                BSTATE.buildRunning = true;
+                updateMainPanelB();
+                buildLoopB();
+            };
+            document.getElementById('tw-bld-stop').onclick = () => {
+                BSTATE.buildRunning = false;
+                updateMainPanelB();
+            };
+            document.getElementById('tw-bld-once').onclick = async () => {
+                applyCfgFromPanelB();
+                logB('Build: rodando 1 ciclo de debug');
+                const villages = getAllVillagesB();
+                for (const v of villages) {
+                    await processVillageBuildB(v);
+                    await sleepB(jitterB(BCFG.perVillagePauseMs));
+                }
+                logB('Build: ciclo debug terminado');
+            };
+            document.getElementById('tw-bld-edit-template').onclick = () => {
+                const current = JSON.stringify(BSTATE.buildTemplate, null, 0).replace(/\],\[/g, '],\n[');
+                const next = prompt(
+                    'Template de construção — array JSON [["building", nível], ...]\n' +
+                    'Buildings: main, barracks, stable, garage, snob, smith, place, market, wood, stone, iron, farm, storage, hide, wall, watchtower, statue\n\n' +
+                    'Vai do início ao fim, pulando o que já está construído.',
+                    current
+                );
+                if (next === null) return;
+                try {
+                    const parsed = JSON.parse(next);
+                    if (!Array.isArray(parsed)) throw new Error('precisa ser array');
+                    BSTATE.buildTemplate = parsed;
+                    lsSetB(LS_TEMPLATE, parsed);
+                    logB(`Template atualizado: ${parsed.length} entradas`);
+                } catch (e) {
+                    alert('Template inválido: ' + e.message);
+                }
+            };
+
+            document.getElementById('tw-rec-start').onclick = () => {
+                applyCfgFromPanelB();
+                if (BSTATE.recruitRunning) { logB('Recruit já está rodando'); return; }
+                BSTATE.recruitRunning = true;
+                updateMainPanelB();
+                recruitLoopB();
+            };
+            document.getElementById('tw-rec-stop').onclick = () => {
+                BSTATE.recruitRunning = false;
+                updateMainPanelB();
+            };
+            document.getElementById('tw-rec-once').onclick = async () => {
+                applyCfgFromPanelB();
+                logB('Recruit: rodando 1 ciclo de debug');
+                const villages = getAllVillagesB();
+                for (const v of villages) {
+                    await processVillageRecruitB(v);
+                    await sleepB(jitterB(BCFG.perVillagePauseMs));
+                }
+                logB('Recruit: ciclo debug terminado');
+            };
+            document.getElementById('tw-rec-edit-mix').onclick = () => {
+                const current = JSON.stringify(BSTATE.troopMix, null, 0);
+                const next = prompt(
+                    'Mix de tropa — objeto JSON {unit: peso, ...}\n' +
+                    'Pesos relativos. Ex: {"axe":0.4,"light":0.3,"spy":0.05}\n' +
+                    'Unidades: spear sword axe archer spy light marcher heavy ram catapult',
+                    current
+                );
+                if (next === null) return;
+                try {
+                    const parsed = JSON.parse(next);
+                    BSTATE.troopMix = parsed;
+                    lsSetB(LS_TROOP_MIX, parsed);
+                    document.getElementById('tw-rec-mix-display').textContent = formatMixB(parsed);
+                    logB(`Mix atualizado: ${JSON.stringify(parsed)}`);
+                } catch (e) {
+                    alert('Mix inválido: ' + e.message);
+                }
+            };
+
+            updateMainPanelB();
+            updateVillagesPanelB();
+            updateLogPanelB();
+        }
+
+        function applyCfgFromPanelB() {
+            const cycle = parseInt(document.getElementById('tw-bld-cycle').value, 10);
+            if (Number.isFinite(cycle) && cycle >= 30) BCFG.cycleMs = cycle * 1000;
+            const slots = parseInt(document.getElementById('tw-bld-slots').value, 10);
+            if (Number.isFinite(slots) && slots > 0) BCFG.queueSlots = slots;
+            const pct = parseInt(document.getElementById('tw-bld-recpct').value, 10);
+            if (Number.isFinite(pct) && pct > 0) BCFG.recruitResourcePct = Math.min(1, pct / 100);
+        }
+
+        function formatMixB(mix) {
+            return Object.entries(mix)
+                .filter(([, w]) => w > 0)
+                .map(([u, w]) => `${u}:${Math.round(w*100)}%`)
+                .join(' ');
+        }
+
+        function updateMainPanelB() {
+            const $ = id => document.getElementById(id);
+            if ($('tw-bld-status')) $('tw-bld-status').textContent = BSTATE.buildRunning ? 'rodando ▶' : 'parado';
+            if ($('tw-rec-status')) $('tw-rec-status').textContent = BSTATE.recruitRunning ? 'rodando ▶' : 'parado';
+            if ($('tw-bld-cycles')) $('tw-bld-cycles').textContent = BSTATE.cycleCount;
+        }
+
+        function updateVillagesPanelB() {
+            const $list = document.getElementById('tw-bld-villages');
+            const $count = document.getElementById('tw-bld-vcount');
+            if (!$list) return;
+            const villages = getAllVillagesB();
+            if ($count) $count.textContent = villages.length;
+            if (villages.length === 0) { $list.textContent = 'aguardando game_data...'; return; }
+            const rows = villages.map(v => {
+                const s = BSTATE.villageStatuses[v.id] || { lastBuild: '-', lastRecruit: '-', status: '-' };
+                return `<div style="border-bottom:1px dotted #ccc;padding:2px 0;">
+                    <b>${v.name}</b> (${v.x}|${v.y})<br>
+                    <span style="color:#1f5d1f;">🏗 ${s.lastBuild}</span><br>
+                    <span style="color:#7a4d1f;">⚔ ${s.lastRecruit}</span><br>
+                    <span style="color:#444;font-size:9px;">${s.status}</span>
+                </div>`;
+            }).join('');
+            $list.innerHTML = rows;
+        }
+
+        function updateLogPanelB() {
+            const $log = document.getElementById('tw-bld-log');
+            if (!$log) return;
+            $log.textContent = BSTATE.log.join('\n');
+        }
+
+        async function initB() {
+            console.log('[TW-BUILD] init() — URL:', location.href);
+            try { injectPanelB(); }
+            catch (e) { console.error('[TW-BUILD] painel falhou:', e); return; }
+
+            // Espera game_data ficar pronto (o farm já espera, mas garante)
+            const start = Date.now();
+            while (Date.now() - start < 8000 && !getGameDataB()) {
+                await sleepB(200);
+            }
+            const gd = getGameDataB();
+            if (!gd) {
+                logB('aguardando game_data...');
+                const retry = setInterval(() => {
+                    if (getGameDataB()) {
+                        clearInterval(retry);
+                        logB(`carregado. World: ${getGameDataB().world}, Vilas: ${getAllVillagesB().length}`);
+                        updateVillagesPanelB();
+                    }
+                }, 1000);
+                return;
+            }
+            logB(`Carregado. World: ${gd.world}, Player: ${gd.player?.name}, Vilas: ${getAllVillagesB().length}`);
+            updateVillagesPanelB();
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initB);
+        } else {
+            initB();
+        }
+    })();
+
+    } // fim mainWorldScript
 
     const code = '(' + mainWorldScript.toString() + ')();';
     const s = document.createElement('script');
