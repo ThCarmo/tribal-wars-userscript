@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TW Farm + Build + Recruit — ThCarmo
 // @namespace    https://github.com/ThCarmo/tribal-wars-userscript
-// @version      0.7.8
+// @version      0.7.9
 // @description  Farm (2L+1S, raio configurável) + Build Queue (multi-vila) + Recruit + Incoming Tagger
 // @author       Thiago Carmo
 // @match        *://*.tribalwars.com.br/*
@@ -17,7 +17,7 @@
 // Tampermonkey 5.5 stable ignora @inject-into page. Workaround clássico:
 // criar um <script> tag com o código real, anexar ao DOM, o browser executa
 // no MAIN WORLD (mesmo contexto que o DevTools console). Funciona em qualquer TM.
-console.log('[TW-FARM] stub carregado v0.7.8 — injetando main world script');
+console.log('[TW-FARM] stub carregado v0.7.9 — injetando main world script');
 (function injectMainWorldScript() {
     function mainWorldScript() {
         'use strict';
@@ -32,7 +32,7 @@ console.log('[TW-FARM] stub carregado v0.7.8 — injetando main world script');
             const b = document.createElement('div');
             b.id = 'tw-farm-banner-prova';
             b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#d40000;color:#fff;padding:12px;font:bold 14px Arial;text-align:center;border-bottom:3px solid #000;box-shadow:0 2px 10px rgba(0,0,0,0.6);';
-            b.innerHTML = `✅ TW Farm + Build + Research + Recruit v0.7.8 ATIVO — painéis: Farm à direita, Build/Research à esquerda <span style="margin-left:20px;cursor:pointer;text-decoration:underline;" id="tw-farm-banner-close">[fechar]</span>`;
+            b.innerHTML = `✅ TW Farm + Build + Research + Recruit v0.7.9 ATIVO — painéis: Farm à direita, Build/Research à esquerda <span style="margin-left:20px;cursor:pointer;text-decoration:underline;" id="tw-farm-banner-close">[fechar]</span>`;
             (document.body || document.documentElement).insertAdjacentElement('afterbegin', b);
             document.getElementById('tw-farm-banner-close').onclick = () => b.remove();
         };
@@ -41,7 +41,7 @@ console.log('[TW-FARM] stub carregado v0.7.8 — injetando main world script');
         } else {
             document.addEventListener('DOMContentLoaded', showBanner);
         }
-        console.log('[TW-FARM] v0.7.8 carregado (script-tag bridge, main world) em', location.href);
+        console.log('[TW-FARM] v0.7.9 carregado (script-tag bridge, main world) em', location.href);
     } catch (e) {
         console.error('[TW-FARM] banner-prova falhou:', e);
     }
@@ -1026,8 +1026,8 @@ console.log('[TW-FARM] stub carregado v0.7.8 — injetando main world script');
             researchAttempts: 5,
             coinsPerCycle: 1,
             maxNobles: 50,
-            // === Especialização de vilas (v0.7.8: TODAS uniform) ===
-            // Default v0.7.8: 200 (> 100) = todas as vilas são NOBLE (template
+            // === Especialização de vilas (v0.7.9: TODAS uniform) ===
+            // Default v0.7.9: 200 (> 100) = todas as vilas são NOBLE (template
             // universal, cunham moedas + treinam nobre + recrutam heavy).
             // Pra voltar à especialização (poucas vilas NOBLE, resto OFF heavy
             // puro), diminuir esse número no painel.
@@ -1042,7 +1042,7 @@ console.log('[TW-FARM] stub carregado v0.7.8 — injetando main world script');
         //         Escolta mínima de heavy + spy.
 
         // ============ TEMPLATE UNIVERSAL ============
-        // Decisão do user (v0.7.8): todas as vilas fazem tudo. So precisa de:
+        // Decisão do user (v0.7.9): todas as vilas fazem tudo. So precisa de:
         //   recursos + farm + storage + smith + stable + market + academia
         // NAO constroi: barracks (sem lança/espada/axe), garage (sem
         // ariete/cat), hide (sem esconder recurso de quem ataca), wall
@@ -1050,7 +1050,7 @@ console.log('[TW-FARM] stub carregado v0.7.8 — injetando main world script');
         // Academia (snob) maxima nivel 1 nesse mundo — academia + cunhagem
         // + treino de nobre rolam em TODAS as vilas.
 
-        // Template ESTRITO (v0.7.8): smith 20 + snob 1 + stable 10 + pré-reqs.
+        // Template ESTRITO (v0.7.9): smith 20 + snob 1 + stable 10 + pré-reqs.
         // Após completar, vila para de construir (template concluído ✓).
         // Loops de coin/snob/recruit continuam rodando normalmente.
         //
@@ -1126,15 +1126,15 @@ console.log('[TW-FARM] stub carregado v0.7.8 — injetando main world script');
             try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
         };
 
-        // Migration v0.7.8: nobleCount mudou de default 5 → 200 (todas viram NOBLE).
+        // Migration v0.7.9: nobleCount mudou de default 5 → 200 (todas viram NOBLE).
         // Se o user tem valor antigo salvo (era 5 ou menor) E nunca passou pela
-        // v0.7.8, reseta pro novo default. Se mexeu manualmente pra >5, respeita.
+        // v0.7.9, reseta pro novo default. Se mexeu manualmente pra >5, respeita.
         const LS_VERSION_KEY = 'twBuildLastSeenVersion';
         const seenVersion = lsGetB(LS_VERSION_KEY, null);
         if (seenVersion !== '0.7.4') {
             const oldCount = lsGetB(LS_NOBLE_COUNT, null);
             if (oldCount === null || oldCount <= 5) {
-                // Reseta pro novo default da v0.7.8
+                // Reseta pro novo default da v0.7.9
                 localStorage.removeItem(LS_NOBLE_COUNT);
             }
             lsSetB(LS_VERSION_KEY, '0.7.4');
@@ -1153,7 +1153,7 @@ console.log('[TW-FARM] stub carregado v0.7.8 — injetando main world script');
             cycleCount: 0,
             lastCycleAt: null,
             log: [],
-            // === Especialização por role (v0.7.8) ===
+            // === Especialização por role (v0.7.9) ===
             templates: {
                 OFF:   customTpl.OFF   || TEMPLATE_OFF,
                 NOBLE: customTpl.NOBLE || TEMPLATE_NOBLE,
@@ -1167,6 +1167,8 @@ console.log('[TW-FARM] stub carregado v0.7.8 — injetando main world script');
             villageStatuses: {},
             villagesCache: null,
             villagesCacheAt: 0,
+            troopsOverview: null,  // { rows, unitTypes, totals } da última busca
+            troopsOverviewAt: 0,
         };
 
         const nowStrB = () => new Date().toTimeString().slice(0, 8);
@@ -1263,6 +1265,124 @@ console.log('[TW-FARM] stub carregado v0.7.8 — injetando main world script');
                 }
             }
             return [];
+        }
+
+        // ===== TROPAS (overview/units) =====
+        // Endpoint /game.php?screen=overview_villages&mode=units lista as tropas
+        // de TODAS as vilas do jogador numa tabela só. Mais barato que iterar
+        // cada vila fetchando stable/barracks/garage.
+
+        async function fetchTroopsOverviewB() {
+            const urls = [
+                '/game.php?screen=overview_villages&mode=units',
+                '/game.php?screen=overview_villages&mode=units&type=own',
+                '/game.php?screen=overview_villages&mode=units&type=in_village',
+            ];
+            for (const url of urls) {
+                try {
+                    const resp = await fetch(url, { credentials: 'same-origin' });
+                    if (!resp.ok) continue;
+                    const html = await resp.text();
+                    const doc = new DOMParser().parseFromString(html, 'text/html');
+                    const result = parseTroopsTableB(doc);
+                    if (result.rows.length > 0) {
+                        logB(`tropas ${url} → ${result.rows.length} vilas, ${result.unitTypes.length} unidades`);
+                        return result;
+                    }
+                } catch (e) {
+                    logB(`tropas ${url} crashou: ${e.message}`);
+                }
+            }
+            return { rows: [], unitTypes: [], totals: {} };
+        }
+
+        function parseTroopsTableB(doc) {
+            // Procura tabela de unidades. Possíveis IDs/classes:
+            //   table.vis (genérico), #units_table, table[id*=units], tabela com header de unidades
+            const result = { rows: [], unitTypes: [], totals: {} };
+
+            // Identifica unidades pelos ícones .unit_link / .unit_sprite ou pelo
+            // header com classes unit-item-*.
+            // Estratégia: pega TODAS as tabelas, identifica a que tem mais row
+            // com link village= + N colunas numéricas.
+            const tables = doc.querySelectorAll('table');
+            let bestTable = null;
+            let bestRowCount = 0;
+            tables.forEach(t => {
+                const rowsWithVillage = t.querySelectorAll('tbody tr a[href*="village="]').length;
+                if (rowsWithVillage > bestRowCount) {
+                    bestRowCount = rowsWithVillage;
+                    bestTable = t;
+                }
+            });
+            if (!bestTable) return result;
+
+            // Identificar unidades pelo header (procura class unit-item-NAME)
+            const headerCells = bestTable.querySelectorAll('thead th, thead td, tr:first-child th, tr:first-child td');
+            const unitTypes = [];
+            headerCells.forEach(th => {
+                const html = th.innerHTML || '';
+                const m = html.match(/unit-item-([a-z]+)/i) || html.match(/unit_image\s+([a-z]+)/i);
+                if (m) {
+                    if (!unitTypes.includes(m[1])) unitTypes.push(m[1]);
+                } else {
+                    // fallback: alt do <img>
+                    const img = th.querySelector('img[src*=".png"], img[alt]');
+                    if (img) {
+                        const src = img.getAttribute('src') || '';
+                        const alt = img.getAttribute('alt') || '';
+                        const m2 = src.match(/unit_([a-z]+)\.png/i) || alt.match(/^([a-z]+)$/i);
+                        if (m2 && !unitTypes.includes(m2[1])) unitTypes.push(m2[1].toLowerCase());
+                    }
+                }
+            });
+            result.unitTypes = unitTypes;
+
+            // Pra cada row do tbody, extrai villageId + array de números por coluna
+            const dataRows = bestTable.querySelectorAll('tbody tr');
+            dataRows.forEach(row => {
+                const link = row.querySelector('a[href*="village="]');
+                if (!link) return;
+                const idMatch = link.href.match(/[?&]village=(\d+)/);
+                if (!idMatch) return;
+                const villageId = idMatch[1];
+                let name = (link.textContent || '').trim();
+                const parenIdx = name.indexOf('(');
+                if (parenIdx > 0) name = name.slice(0, parenIdx).trim();
+                const cells = row.querySelectorAll('td');
+                const units = {};
+                // As colunas numéricas vêm DEPOIS da coluna com link da vila
+                let foundLinkCol = false;
+                let unitColIdx = 0;
+                cells.forEach((td) => {
+                    if (!foundLinkCol) {
+                        if (td.contains(link)) foundLinkCol = true;
+                        return;
+                    }
+                    const txt = (td.textContent || '').replace(/[^\d]/g, '');
+                    const n = parseInt(txt, 10);
+                    if (Number.isFinite(n)) {
+                        const unit = unitTypes[unitColIdx];
+                        if (unit) units[unit] = n;
+                        unitColIdx++;
+                    }
+                });
+                result.rows.push({ villageId, name: name.slice(0, 30), units });
+                for (const [u, n] of Object.entries(units)) {
+                    result.totals[u] = (result.totals[u] || 0) + n;
+                }
+            });
+            return result;
+        }
+
+        function formatTroopsTotalsB(totals) {
+            if (!totals || Object.keys(totals).length === 0) return '(nenhuma tropa detectada)';
+            const order = ['spear','sword','axe','archer','spy','light','marcher','heavy','ram','catapult','knight','snob'];
+            const labels = {spear:'L', sword:'E', axe:'M', archer:'A', spy:'spy', light:'CL', marcher:'AC',
+                heavy:'CP', ram:'AR', catapult:'CT', knight:'PAL', snob:'NB'};
+            return order.filter(u => totals[u] > 0)
+                .map(u => `${labels[u] || u}:${totals[u].toLocaleString('pt-BR')}`)
+                .join(' | ');
         }
 
         async function getAllVillagesB(forceRefresh = false) {
@@ -2207,6 +2327,11 @@ console.log('[TW-FARM] stub carregado v0.7.8 — injetando main world script');
     <input id="tw-bld-recpct" type="number" value="${Math.round(BCFG.recruitResourcePct*100)}" min="10" max="100" style="width:50px;font-size:10px;"/>
     <button id="tw-bld-refresh-villages" style="background:#1f4d7a;color:white;border:none;padding:2px 6px;cursor:pointer;font-size:10px;border-radius:2px;">⟳ Vilas</button>
     <button id="tw-bld-diag" style="background:#a04000;color:white;border:none;padding:2px 6px;cursor:pointer;font-size:10px;border-radius:2px;" title="Diagnostico verbose no console F12">🔎 Diag</button>
+    <button id="tw-bld-troops" style="background:#7a4d1f;color:white;border:none;padding:2px 6px;cursor:pointer;font-size:10px;border-radius:2px;" title="Contar todas as tropas em todas as vilas">📊 Tropas</button>
+  </div>
+  <div id="tw-bld-troops-display" style="background:#fff8e0;border:1px solid #a07000;padding:5px;margin-bottom:6px;font-size:10px;border-radius:2px;display:none;">
+    <b>📊 Tropas totais:</b> <span id="tw-bld-troops-totals">clique 📊 Tropas pra atualizar</span>
+    <div style="font-size:9px;color:#666;margin-top:2px;" id="tw-bld-troops-meta"></div>
   </div>
 
   <div style="font-weight:bold;color:#1f5d1f;margin:8px 0 3px;">🏗 Build Queue</div>
@@ -2285,6 +2410,26 @@ console.log('[TW-FARM] stub carregado v0.7.8 — injetando main world script');
                 const v = await getAllVillagesB(true);
                 logB(`Encontradas ${v.length} vilas`);
                 updateVillagesPanelB();
+            };
+            document.getElementById('tw-bld-troops').onclick = async () => {
+                const $display = document.getElementById('tw-bld-troops-display');
+                const $totals = document.getElementById('tw-bld-troops-totals');
+                const $meta = document.getElementById('tw-bld-troops-meta');
+                $display.style.display = 'block';
+                $totals.textContent = 'buscando...';
+                $meta.textContent = '';
+                logB('Buscando tropas em todas as vilas...');
+                const result = await fetchTroopsOverviewB();
+                BSTATE.troopsOverview = result;
+                BSTATE.troopsOverviewAt = Date.now();
+                wB.TW_BUILD_TROOPS = result;  // pra inspecionar no console
+                const totalUnits = Object.values(result.totals).reduce((s, n) => s + n, 0);
+                $totals.textContent = formatTroopsTotalsB(result.totals);
+                $meta.textContent = `${result.rows.length} vilas · ${totalUnits.toLocaleString('pt-BR')} tropas totais · atualizado às ${nowStrB()} · detalhes em window.TW_BUILD_TROOPS`;
+                logB(`Tropas: ${formatTroopsTotalsB(result.totals)} (${result.rows.length} vilas, ${totalUnits} total)`);
+                console.log('%c═══ TROPAS POR VILA ═══', 'color:#7a4d1f;font-size:14px;font-weight:bold');
+                console.table(result.rows.map(r => ({ vila: r.name, ...r.units })));
+                console.log('Totais:', result.totals);
             };
             document.getElementById('tw-bld-diag').onclick = async () => {
                 console.log('%c═══ TW-BUILD DIAGNÓSTICO ═══', 'color:#a04000;font-size:14px;font-weight:bold');
