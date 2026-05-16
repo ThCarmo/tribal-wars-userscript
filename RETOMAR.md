@@ -1,171 +1,110 @@
 # RETOMAR — Tribal Wars Userscript
 
-> Checkpoint pra próxima sessão (Claude ou humano). Última atualização: **2026-05-16**.
+> Checkpoint pra próxima sessão. Última atualização: **2026-05-16, fim do dia**.
 
 ## Status atual
 
-- **tw-farm.user.js v0.6.0** — Farm OPERACIONAL (BR142) + Build/Research/Coin/Snob/Recruit em mundo speed (~100 vilas).
-  - Histórico do dia 2026-05-16:
-    - v0.4.0: build+recruit fundidos no farm (1 script só)
-    - v0.5.0 → v0.5.3: smithy researcher, fallback `overview_villages`, START TUDO, fila inteligente (enche todos os slots por vila por passada)
-    - v0.6.0: Coin Minter + Snob Trainer + academia mais cedo no template
+- **tw-farm.user.js v0.8.1** ✅ Farm BR142 OPERACIONAL desde 14/05 + 🆕 Build/Research/Coin/Snob/Recruit/Ataques em mundo speed brs1.
+- Player: **THCARMO**, **100 vilas** em brs1.tribalwars.com.br
+- Vila ativa de teste: Aldeia 10 (494|462) — já bateu "template concluído ✓" + heavy:200 + spy:200 confirmado em log
 
-Usuário (Dr. Thiago, jogador `ThCarmo`) opera 2 mundos:
-- **BR142**: mundo "normal", usa farm + tagger
-- **Mundo speed novo (URL ainda pendente)**: usa build + research + coin + snob + recruit. Sem necessidade de farm. ~100 vilas.
+## Arquivo único
 
-## Roadmap v0.7 — Ataques combinados (PENDENTE — pedir alinhamento antes de codar)
+`src/tw-farm.user.js` (~135KB). Banner vermelho no topo confirma "v0.8.1 ATIVO". Dois painéis no jogo:
+- **Direita (laranja)**: Farm + Tagger (BR142)
+- **Esquerda (verde)**: Build/Research/Coin/Snob/Recruit + Atacar Jogador (brs1)
 
-Memória da Op DST 13/05/2026: falha tática que desperdiçou tropas. Causas:
-- Skew sysclock vs server
-- Regra do piso 72 pop não vale pra barbáros
-- Velocidade calculada pela unidade mais lenta
-- `pythonw.exe` morrendo silencioso
-- UI scraping frágil
+## Sessão de 16/05/2026
 
-Pra v0.7 fazer ataque combinado DIREITO, precisa:
-1. **Definir vilas de origem** (interface: selecionar N vilas no painel)
-2. **Definir alvo** (coord ou ID)
-3. **Definir composição por origem** (cheia, NT-only, fakes, ariete spam)
-4. **Calcular timing** — usa `Timing.getCurrentServerTime()` nativo do jogo (NÃO sysclock)
-5. **Velocidade pela unidade mais lenta da comp** (NT = 35min/c, ariete = 30, axe = 18)
-6. **Janela de chegada** (ex: chegada simultânea ±2s no alvo)
-7. **Pre-flight checks**:
-   - Comp existe e é homogênea?
-   - Pop disponível?
-   - Praça construída?
-   - Captcha ativo?
-8. **Disparo em ORDEM REVERSA** — a vila mais longe sai primeiro
-9. **Confirmação humana** antes de cada salva (dry-run obrigatório)
+Passamos por **18 versões** (v0.4.0 → v0.8.1) numa sessão. Mudanças principais:
 
-**Decisões a tomar com o Dr. Thiago:**
-- Quantos NT por alvo? (1, 2, 3, 4?)
-- Quantos fakes acompanham? (10, 20, 30?)
-- Janela máxima de chegada? (±1s, ±5s, ±10s?)
-- Disparo via Praça ou via Confirm Send (mais lento mas mais robusto)?
-- Lista de alvos: manual no painel ou import via clipboard?
+### Build + Recruit (v0.4 → v0.5.3)
+- Detecção de 100 vilas via fallback `/game.php?screen=overview_villages&mode=combined` (game_data trouxe só 3)
+- Fila inteligente: enche os 2 slots por vila por passada (era 1, ele precisava completar manual)
+- Skip on pre-req fail: snob falha por falta de smith 5 NÃO trava a vila — pula pro próximo item do template
+- Tolerância a erro: vila quebrada loga e segue
 
-## O que existe e funciona
+### Coin Minter + Snob Trainer (v0.6 → v0.7.5)
+- Cunha 1 moeda/vila/passada em todas
+- Treina nobre quando tem moedas+pop suficientes
+- Roles OFF/NOBLE introduzidos e depois simplificados pra UNIVERSAL (todas vilas iguais)
+- Mix tropa: 100% heavy (decisão do user)
 
-**Arquivo único agora**: `src/tw-farm.user.js` (v0.4.0). 2 painéis num só userscript: Farm (laranja, direita) + Build (verde, esquerda).
+### Template estrito (v0.7.6 → v0.7.7)
+- Decisão do user: parar de construir prédios desnecessários
+- TEMPLATE_UNIVERSAL atual constrói APENAS:
+  - main 3→20, recursos 5→25, farm 3→20, storage 3→25
+  - barracks 1 (pré-req smith)
+  - smith 1→20
+  - market 1→10 (pré-req academia)
+  - stable 1→10 (pra heavy recrutar)
+  - snob 1 (academia, max neste mundo)
+- NÃO constrói: garage, hide, wall, watchtower, statue, snob 2/3
+- Quando completar: "template concluído ✓" e para de tentar
 
-### Painel Farm (direita, laranja) — funciona em BR142
+### Parser conservador (v0.7.8)
+- Bug: log `coin: erro` (literal 4 chars). Causa: regex `/error_box|recursos|.../i` casava com QUALQUER página (label "Recursos" no topo) e fallback retornava 'erro'
+- Fix: só erro se achar explicitamente `<div class="error_box">`
+- Aplicado em 4 funções (mint/snob/recruit/build)
+- Cunhagem agora compara coinsBefore vs coinsAfter pra detectar sucesso real
 
-| Módulo | Status | Botão |
-|---|---|---|
-| **Farm** via Assistente de Saque (am_farm) | ✅ v0.2.5 | ▶ START / ■ STOP / ⟳ RESYNC |
-| **Map Scan** — lê `/map/village.txt`, lista barbáros no raio | ✅ v0.3.0 | 🔍 Buscar Barbs |
-| **Praça Sender** — `sendFarmViaPlace(targetId, light, spy, dryRun)` flow 3-step | ✅ v0.3.1 | 🧪 Testar 1 / 🎯 Atacar 1 (REAL) |
-| **Atacar Todos** — loop sobre scan com guard-rails | ✅ v0.3.2 | 💥 ATACAR TODOS / ■ PARAR |
-| Auto-resync se inputs zerados + razão de parada no log | ✅ v0.3.3 | — |
-| **Tagger** — classifica incomings por velocidade | ✅ v0.2.0 | ⟳ Analisar / ■ STOP |
+### Contador de Tropas (v0.7.9 + v0.8.1)
+- Botão `📊 Tropas` → GET `overview_villages?mode=units` → agregado por unidade
+- v0.7.9 buggy: "162 vilas, 0 tropas" (tabela com em casa + em comando + em apoio = 3 linhas por vila + header sem class)
+- v0.8.1 fix: agregação multi-linha + fallback PT-BR no header (Lanceiro/Espadachim/Cavalaria pesada/Nobre)
+- HTML salvo em `window.TW_BUILD_TROOPS_RAW_HTML` pra debug se ainda falhar
+- Display abreviado PT-BR: L (lança), E (espada), M (machado), A (arq), spy, CL (cav leve), AC (arq mont), CP (paladino), AR (ariete), CT (cat), PAL (paladino), NB (nobre)
 
-### Painel Build (esquerda, verde) — 🆕 v0.4.0, focado em mundo speed
+### Ataques de conquista (v0.8.0)
+- Bloco vermelho no painel: `🎯 Conquistar Jogador`
+- `fetchPlayerByNameB`: busca em `/map/player.txt`
+- `fetchVillagesOfPlayerB`: busca em `/map/village.txt` filtrando por player_id
+- `planConquestB`: pra cada vila do alvo (ordenada por pontos asc), escolhe 4 nossas vilas mais próximas com NT+CP disponível. Track de nobres alocados por vila.
+- `executeConquestPlanB`: dispara em loop, rate limit 25/min, pausa 2-3s, auto-stop em captcha ou 5 erros sem sucesso
+- **2 confirmações obrigatórias** (alert + prompt nome exato) pra evitar Op DST 2.0
+- Comp default: 1 NT + 500 CP + 0 spy
 
-| Módulo | Status | Botão |
-|---|---|---|
-| **Build Queue** — itera todas as vilas, lê sede, enfileira próximo prédio do template | 🆕 v0.4.0 | ▶ START BUILD / ■ STOP / ▷ 1 ciclo |
-| **Template editável** — JSON `[["wood", 5], ["main", 3], ...]`, persiste em localStorage chave `twBuildTemplate` | 🆕 v0.4.0 | ✎ Editar template |
-| **Recruiter** — itera vilas, GET barracks/stable/garage, POST recrutamento por mix | 🆕 v0.4.0 | ▶ START RECRUIT / ■ STOP / ▷ 1 ciclo |
-| **Mix editável** — JSON `{"axe":0.4,"light":0.3}`, peso relativo, persiste em `twBuildTroopMix` | 🆕 v0.4.0 | ✎ Editar mix tropa |
-| **Multi-vila nativo** — usa `game_data.villages` direto, sem trocar contexto do jogo | 🆕 v0.4.0 | — |
-| **Painel à esquerda** com lista de vilas + log das 30 últimas ações | 🆕 v0.4.0 | — |
+## Pendências (próxima sessão)
 
-**Arquitetura do build dentro do farm**: tudo num IIFE `buildRecruitModule()` no fim do `mainWorldScript`. Variáveis sufixadas com `B` ou nomes próprios (`BCFG`, `BSTATE`, `logB`, `sleepB`, `jitterB`, `injectPanelB`, `initB`) pra zero colisão com farm. Pode ler isso de cima a baixo sem confundir com o farm.
+### Imediato — VALIDAR v0.8.1
+1. Atualizar TM pra v0.8.1 (cache GitHub ~5min OU manual via Bloco de Notas)
+2. Clicar `📊 Tropas` — esperar: ~100 vilas, totais > 0 (CP, spy, NB)
+3. Se ainda 0: F12 console → `TW_BUILD_TROOPS_RAW_HTML.slice(0,3000)` → mandar pro Claude pra calibrar pelo DOM real do brs1
 
-**Defaults out-of-the-box:**
-- Ciclo: 90s (mundo speed). Para mundo normal subir pra 600s.
-- Slots fila: 2 (sem Premium). Quem tem Premium: subir pra 5.
-- Recruit %: 85% dos recursos disponíveis por ciclo, cap 200/unidade.
-- Mix: 40% axe + 30% light + 10% spear + 10% heavy + 5% sword + 5% spy (off com defesa mínima).
-- Template build: 48 entradas, "off rush" — main 3 → recursos 5 → barracks/smith → recursos 8 → barracks/main 10 → stable → ... → muralha → garage → snob.
+### Próximo — DISPARAR ATAQUES
+1. `📋 Planejar Ataque` → digitar "Luis Fuerza" (jogador alvo declarado)
+2. Validar plano no alert (X vilas alvo, Y ataques, recursos)
+3. Confirmar (digitar nome exato no prompt)
+4. Observar log + stop button visível
+5. Conferir em `/game.php?screen=overview_villages&mode=commands` que os ataques saíram
 
-**Pendências esperadas no 1º shake-down:**
-- Parser de nível (`parseCurrentLevels`) pode falhar se DOM do mundo speed for diferente do BR142 — verificar console F12.
-- Endpoint `ajaxaction=upgrade_building` pode ter response diferente — checar `enqueueBuild` rejeitando válidos como ambíguos.
-- Recrutamento parser de custos (`parseUnitCosts`) usa `data-costs` em JSON; se mundo não expõe, cai no fallback `.cost_wood` etc — pode falhar e logar "sem custos parseáveis".
-- Se falhar: o ciclo "1 ciclo só (debug)" não bloqueia, mostra no log o que deu — usar pra calibrar antes de deixar loopando.
+### v0.9 (roadmap — discutir antes de codar)
+- Ataques SIMULTÂNEOS com chegada coordenada ±1s
+- Usa `Timing.getCurrentServerTime()` (nativo do jogo, sem skew)
+- Cálculo reverso: "pra chegar às 23:00:00, vila X dispara às 22:25:00"
+- Velocidade pela unidade mais lenta da comp (lição Op DST)
+- Pre-flight checks rígidos antes de cada salva
+- Comp homogênea validada (vila tem NT+CP+escolta exata?)
 
-## Configuração padrão atual
+## Armadilhas registradas (não cair de novo)
 
-- **Comp**: 2 light + 1 spy (template A do Loot Assistant — configurado manual no jogo)
-- **Raio**: 35 campos (configurável no painel)
-- **Cooldown por alvo**: 30min (persistido em `localStorage` key `twFarmLastFarmByTarget`, compartilhado entre Farm e Map Scan)
-- **Jitter**: 3000-7000ms entre farms
-- **Guard-rails**: CL<2, spy<1, captcha, 5 erros sem 1 sucesso → para automaticamente
+1. **`@version` na linha 4 não tem "v"** — Edit replace_all `v0.7.X → v0.7.Y` NÃO pega a linha 4 (`// @version      0.7.X`). Sempre Edit específico pra essa linha.
+2. **Cache CDN `raw.githubusercontent.com`** TTL ~5min. Tampermonkey "Verificar atualizações" pode receber versão velha do cache. Workaround: caminho manual (Bloco de Notas → Ctrl+A/C → cola no editor do TM).
+3. **Tampermonkey "Acesso ao site = Ao clicar"** em Chrome MV3 silencia tudo. Fix obrigatório: chrome://extensions → TM → Detalhes → "Em todos os sites".
+4. **Inputs do painel resetam no F5** — auto-resync mitiga mas se zerado preencher manual antes.
+5. **game_data.villages** pode trazer só algumas vilas (3 de 100 no brs1) — fallback `overview_villages?mode=combined` é confiável.
+6. **Parser de erro genérico** mata tudo. SEMPRE usar match explícito de `<div class="error_box">...</div>`.
+7. **Tabela `overview_villages?mode=units`** tem múltiplas linhas por vila (em casa + em comando + em apoio). Sempre agregar por villageId.
 
-## Validações no mundo real (14/05/2026)
-
-- Vila origem 86934 (821|403): **412 barbáros no raio 35** (vs 17 do Loot Assistant — 24x cobertura)
-- Estoque inicial: 708 CL + 470 spy → máx **353 ataques** possíveis na sessão (limitado por CL/2)
-- Ataque manual em 90857 (820|405, 2.2c): confirmado em "Comandos" do jogo
-- Atacar Todos: iniciado e funcionando ao final da sessão
-
-## Pendências claras / próximos passos
-
-### v0.3.4 — Multi-vila (alta prioridade)
-Hoje o bot ataca SÓ da vila ativa no jogo (`game_data.village.id`). Pra o Sr. ter farm de TODAS as vilas dele:
-- Iterar `game_data.player.villages` (objeto com todas as vilas do jogador)
-- Pra cada uma: trocar contexto (`/game.php?village=ID&screen=overview` GET pra "ativar") e rodar scan + atacar
-- OU: passar `village` parameter direto pra `sendFarmViaPlace` em vez de ler do `game_data`
-
-### v0.3.5 — Persistência de contadores
-Hoje `STATE.sent`, `STATE.errors` zeram no F5. Salvar em `localStorage` chave `twFarmSession` com timestamp do início — restaurar se F5 dentro de 12h.
-
-### v0.4 — Refazer Op DST
-Operação coordenada de NT+fakes que falhou em 13/05/2026 (falha tática, não anti-bot). Pre-flight checks rígidos: skew sysclock vs server, piso 72 pop, velocidade da unidade mais lenta, comp valida antes de sair.
-
-### Limitações conhecidas
-
-- **Auto-fix de Template A não implementado**: se Sr. mudou template A pra outra coisa, farm via am_farm dispara comp errada. Confirmar antes de cada sessão.
-- **Tagger**: só distingue por velocidade min/c, não cruza com histórico do atacante (NT-real vs NT-fake têm mesma velocidade).
-- **village.txt cache**: o endpoint é regenerado a cada poucos minutos pelo servidor; ataque em vila que mudou de dono no meio do scan vira "erro" (não para o loop, só conta).
-
-## Como retomar em uma nova sessão
+## Como retomar em nova sessão
 
 ```bash
 cd "C:/Users/Thiago Carmo/projects/tribal-wars-userscript"
 git pull
-git log --oneline -10   # ver últimos commits
+git log --oneline -15
 ```
 
-Repo: https://github.com/ThCarmo/tribal-wars-userscript (público)
-
-### Para o usuário (Dr. Thiago, jogo)
-
-**Farm (BR142):**
-1. Abrir `br142.tribalwars.com.br`, logar
-2. Tampermonkey deve ter `tw-farm` ativo (atualizar via "Verificar atualizações" se quiser pegar versão nova)
-3. Banner vermelho no topo confirma versão ativa
-4. Painel canto superior direito tem 3 blocos: Farm, Map Scan, Tagger
-5. Fluxo padrão de farm: 🔍 Buscar Barbs → ⟳ resync (Farm) → 💥 ATACAR TODOS
-
-**Build + Recruit (mundo speed novo):**
-1. Já está dentro do `tw-farm.user.js` v0.4.0 — não precisa instalar segundo script. Basta atualizar o script existente no Tampermonkey (Verificar atualizações, OU copiar+colar conteúdo do raw).
-2. Abrir o servidor do mundo speed, logar
-3. Banner vermelho do farm agora diz "v0.4.0 — painéis: Farm à direita, Build à esquerda"
-4. Painel verde aparece à ESQUERDA com seções Build Queue + Recruit + lista de vilas + log
-5. **Antes de soltar**: rodar 1× "▷ 1 ciclo só (debug)" do Build e do Recruit — olhar log no painel ou F12 console pra ver se prédios + custos estão sendo parseados certo
-6. Se OK: clicar ▶ START BUILD e ▶ START RECRUIT — vai rodar até clicar ■ STOP
-7. Pra customizar: ✎ Editar template (lista de prédios) e ✎ Editar mix tropa
-
-### Para o agente que pegar essa sessão
-
-- Stack: vanilla JS, sem build, distribui via raw GitHub
-- `src/tw-farm.user.js` é o arquivo único (~700 linhas)
-- Tampermonkey roda em "main world" via `script-tag bridge` (manifest V3 ignora `@inject-into page`)
-- `game_data` é a fonte canônica pra vila origem, jogador, csrf
-- Endpoint público do TW: `/map/village.txt` (CSV `id,name,x,y,player_id,points,rank`)
-- Ataque via Praça: `screen=place` POST com 3 etapas (form fetch → try=confirm → action=command)
-
-## Armadilhas registradas (não cair de novo)
-
-1. **Tampermonkey "Ao clicar" em Chrome MV3 silencia tudo** — `chrome://extensions/` → TM → Detalhes → "Em todos os sites". (Detalhado em `~/.claude/memory/feedback_tampermonkey_chrome_mv3.md`)
-2. **BR142 não traz coordenadas no link `info_village`** — parser precisa varrer cada `<td>` da row, não confiar no link. (Fix em v0.2.5)
-3. **Inputs do painel resetam no F5** — auto-resync mitiga (v0.3.3), mas se ainda zerado, preencher manual antes de Atacar Todos.
-4. **`bot Python anterior` em `~/projects/tribal-wars-bot`**: também existe, mas userscript foi escolhido como caminho principal (sem skew de relógio, sem pythonw silencioso, sem UI scraping frágil).
-
-## Triggers de comando no Claude
-
+Triggers no Claude:
 - `retomar tribal` ou `contexto tribal wars` → carrega memória deste projeto
-- Memória em `~/.claude/memory/project_tribal_wars.md` (auto-loaded via MEMORY.md)
+
+Estado canônico: este README + `git log` + memória em `~/.claude/memory/project_tribal_wars.md`.
