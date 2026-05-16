@@ -4,12 +4,46 @@
 
 ## Status atual
 
-- **tw-farm.user.js v0.4.0** ✅ Farm OPERACIONAL (BR142) + 🆕 Build/Recruit RECÉM-INTEGRADO (não testado).
-  - Em 2026-05-16: Dr. Thiago entrou em mundo speed novo, pediu construção+recrutamento. Foi criado `tw-build.user.js` como arquivo separado, depois **fundido dentro do tw-farm** a pedido do usuário (não queria gerenciar 2 scripts no Tampermonkey). Build vive num IIFE isolado com sufixo `B`/`B...` em todas as variáveis pra não colidir com farm.
+- **tw-farm.user.js v0.6.0** — Farm OPERACIONAL (BR142) + Build/Research/Coin/Snob/Recruit em mundo speed (~100 vilas).
+  - Histórico do dia 2026-05-16:
+    - v0.4.0: build+recruit fundidos no farm (1 script só)
+    - v0.5.0 → v0.5.3: smithy researcher, fallback `overview_villages`, START TUDO, fila inteligente (enche todos os slots por vila por passada)
+    - v0.6.0: Coin Minter + Snob Trainer + academia mais cedo no template
 
 Usuário (Dr. Thiago, jogador `ThCarmo`) opera 2 mundos:
 - **BR142**: mundo "normal", usa farm + tagger
-- **Mundo speed novo (URL ainda pendente)**: usa build + recruit. Sem necessidade de farm.
+- **Mundo speed novo (URL ainda pendente)**: usa build + research + coin + snob + recruit. Sem necessidade de farm. ~100 vilas.
+
+## Roadmap v0.7 — Ataques combinados (PENDENTE — pedir alinhamento antes de codar)
+
+Memória da Op DST 13/05/2026: falha tática que desperdiçou tropas. Causas:
+- Skew sysclock vs server
+- Regra do piso 72 pop não vale pra barbáros
+- Velocidade calculada pela unidade mais lenta
+- `pythonw.exe` morrendo silencioso
+- UI scraping frágil
+
+Pra v0.7 fazer ataque combinado DIREITO, precisa:
+1. **Definir vilas de origem** (interface: selecionar N vilas no painel)
+2. **Definir alvo** (coord ou ID)
+3. **Definir composição por origem** (cheia, NT-only, fakes, ariete spam)
+4. **Calcular timing** — usa `Timing.getCurrentServerTime()` nativo do jogo (NÃO sysclock)
+5. **Velocidade pela unidade mais lenta da comp** (NT = 35min/c, ariete = 30, axe = 18)
+6. **Janela de chegada** (ex: chegada simultânea ±2s no alvo)
+7. **Pre-flight checks**:
+   - Comp existe e é homogênea?
+   - Pop disponível?
+   - Praça construída?
+   - Captcha ativo?
+8. **Disparo em ORDEM REVERSA** — a vila mais longe sai primeiro
+9. **Confirmação humana** antes de cada salva (dry-run obrigatório)
+
+**Decisões a tomar com o Dr. Thiago:**
+- Quantos NT por alvo? (1, 2, 3, 4?)
+- Quantos fakes acompanham? (10, 20, 30?)
+- Janela máxima de chegada? (±1s, ±5s, ±10s?)
+- Disparo via Praça ou via Confirm Send (mais lento mas mais robusto)?
+- Lista de alvos: manual no painel ou import via clipboard?
 
 ## O que existe e funciona
 

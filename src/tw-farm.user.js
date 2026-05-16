@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TW Farm + Build + Recruit — ThCarmo
 // @namespace    https://github.com/ThCarmo/tribal-wars-userscript
-// @version      0.5.3
+// @version      0.6.0
 // @description  Farm (2L+1S, raio configurável) + Build Queue (multi-vila) + Recruit + Incoming Tagger
 // @author       Thiago Carmo
 // @match        *://*.tribalwars.com.br/*
@@ -17,7 +17,7 @@
 // Tampermonkey 5.5 stable ignora @inject-into page. Workaround clássico:
 // criar um <script> tag com o código real, anexar ao DOM, o browser executa
 // no MAIN WORLD (mesmo contexto que o DevTools console). Funciona em qualquer TM.
-console.log('[TW-FARM] stub carregado v0.5.3 — injetando main world script');
+console.log('[TW-FARM] stub carregado v0.6.0 — injetando main world script');
 (function injectMainWorldScript() {
     function mainWorldScript() {
         'use strict';
@@ -32,7 +32,7 @@ console.log('[TW-FARM] stub carregado v0.5.3 — injetando main world script');
             const b = document.createElement('div');
             b.id = 'tw-farm-banner-prova';
             b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#d40000;color:#fff;padding:12px;font:bold 14px Arial;text-align:center;border-bottom:3px solid #000;box-shadow:0 2px 10px rgba(0,0,0,0.6);';
-            b.innerHTML = `✅ TW Farm + Build + Research + Recruit v0.5.3 ATIVO — painéis: Farm à direita, Build/Research à esquerda <span style="margin-left:20px;cursor:pointer;text-decoration:underline;" id="tw-farm-banner-close">[fechar]</span>`;
+            b.innerHTML = `✅ TW Farm + Build + Research + Recruit v0.6.0 ATIVO — painéis: Farm à direita, Build/Research à esquerda <span style="margin-left:20px;cursor:pointer;text-decoration:underline;" id="tw-farm-banner-close">[fechar]</span>`;
             (document.body || document.documentElement).insertAdjacentElement('afterbegin', b);
             document.getElementById('tw-farm-banner-close').onclick = () => b.remove();
         };
@@ -41,7 +41,7 @@ console.log('[TW-FARM] stub carregado v0.5.3 — injetando main world script');
         } else {
             document.addEventListener('DOMContentLoaded', showBanner);
         }
-        console.log('[TW-FARM] v0.5.3 carregado (script-tag bridge, main world) em', location.href);
+        console.log('[TW-FARM] v0.6.0 carregado (script-tag bridge, main world) em', location.href);
     } catch (e) {
         console.error('[TW-FARM] banner-prova falhou:', e);
     }
@@ -1024,6 +1024,8 @@ console.log('[TW-FARM] stub carregado v0.5.3 — injetando main world script');
             recruitMaxPerUnit: 200,
             researchEnabled: true,      // pesquisa tropas no ferreiro antes de recrutar
             researchAttempts: 5,        // tenta até 5 pesquisas por vila por passada
+            coinsPerCycle: 1,           // moedas pra cunhar por vila por passada
+            maxNobles: 50,              // cap absoluto de nobres treinados
             troopMix: {
                 spear:  0.10,
                 sword:  0.05,
@@ -1048,11 +1050,15 @@ console.log('[TW-FARM] stub carregado v0.5.3 — injetando main world script');
             ['wood', 12], ['stone', 12], ['iron', 10],
             ['farm', 10], ['storage', 10],
             ['stable', 3], ['place', 1], ['market', 3],
-            ['stable', 10], ['barracks', 15], ['main', 15], ['smith', 15],
+            // Academia + market mais cedo pra começar a cunhar moedas o quanto antes
+            ['main', 15], ['market', 5], ['snob', 1],
+            ['stable', 10], ['barracks', 15], ['smith', 15],
             ['wood', 20], ['stone', 20], ['iron', 18],
             ['farm', 20], ['storage', 20], ['stable', 15],
+            ['snob', 2],
             ['wall', 5], ['wall', 10], ['wall', 15], ['wall', 20],
-            ['garage', 1], ['garage', 5], ['snob', 1],
+            ['garage', 1], ['garage', 5],
+            ['snob', 3],
             ['market', 10],
             ['wood', 30], ['stone', 30], ['iron', 30],
             ['farm', 30], ['storage', 30],
@@ -1073,6 +1079,8 @@ console.log('[TW-FARM] stub carregado v0.5.3 — injetando main world script');
             buildRunning: false,
             researchRunning: false,
             recruitRunning: false,
+            coinRunning: false,
+            snobRunning: false,
             cycleCount: 0,
             lastCycleAt: null,
             log: [],
@@ -1359,6 +1367,7 @@ console.log('[TW-FARM] stub carregado v0.5.3 — injetando main world script');
                 BSTATE.villageStatuses[village.id] = {
                     name: village.name, coord: `(${village.x}|${village.y})`,
                     lastBuild: '-', lastRecruit: '-', lastResearch: '-',
+                    lastCoin: '-', lastSnob: '-',
                     buildings: null,   // {main:5, wood:8, ...}
                     status: 'pendente',
                 };
@@ -1795,6 +1804,199 @@ console.log('[TW-FARM] stub carregado v0.5.3 — injetando main world script');
             logB('Research loop parado');
         }
 
+        // ============ COIN MINTER (academia) ============
+        // Em mundos com sistema de moedas: cada nobre custa N moedas (1, 3, 6, 10...)
+        // Cunhagem custa madeira/argila/ferro. Faz sentido cunhar continuamente em
+        // todas as vilas que tem academia, acumulando moedas pra próximos nobres.
+
+        async function fetchSnobScreenB(villageId) {
+            const url = `/game.php?village=${villageId}&screen=snob`;
+            const resp = await fetch(url, { credentials: 'same-origin' });
+            if (!resp.ok) throw new Error(`HTTP ${resp.status} snob`);
+            const html = await resp.text();
+            return { html, doc: new DOMParser().parseFromString(html, 'text/html') };
+        }
+
+        function parseCoinFormB(doc) {
+            // Form típico: <form action="...&action=coin&h=..." method=POST> + input name=coin (qty)
+            // Variantes: action=coin / action=mint / action=mint_coin
+            const forms = doc.querySelectorAll('form');
+            for (const form of forms) {
+                const action = form.getAttribute('action') || '';
+                if (!/(action=coin|action=mint)/i.test(action)) continue;
+                const hidden = {};
+                form.querySelectorAll('input').forEach(inp => {
+                    if (inp.name && inp.type !== 'submit') hidden[inp.name] = inp.value || '';
+                });
+                return { action, hidden };
+            }
+            return null;
+        }
+
+        function parseCoinCountB(doc) {
+            // Texto tipo "Moedas: 12" ou "Moedas armazenadas: 12"
+            const text = doc.body ? (doc.body.textContent || '') : '';
+            const m = text.match(/[Mm]oedas\D{1,15}(\d+)/);
+            return m ? parseInt(m[1], 10) : null;
+        }
+
+        async function mintCoinsInVillageB(villageId, amount) {
+            let page;
+            try { page = await fetchSnobScreenB(villageId); }
+            catch (e) { return { ok: false, error: 'snob não acessível: ' + e.message }; }
+            const formInfo = parseCoinFormB(page.doc);
+            if (!formInfo) return { ok: false, error: 'sem form de cunhagem (academia não construída?)' };
+            const coinsBefore = parseCoinCountB(page.doc);
+            const csrf = parseCsrfB(page.doc);
+
+            const fd = new FormData();
+            for (const [k, v] of Object.entries(formInfo.hidden)) fd.append(k, v);
+            // Variantes de nome do input: coin, coins, amount, qty
+            fd.set('coin', String(amount));
+            fd.set('coins', String(amount));
+            fd.set('amount', String(amount));
+            if (csrf) fd.set('h', csrf);
+
+            let actionUrl = formInfo.action;
+            if (actionUrl.startsWith('/') && !actionUrl.includes(`village=${villageId}`)) {
+                actionUrl += (actionUrl.includes('?') ? '&' : '?') + `village=${villageId}`;
+            }
+            try {
+                const r = await fetch(actionUrl, { method: 'POST', body: fd, credentials: 'same-origin' });
+                const text = await r.text();
+                if (/error_box|insufficient|n[ãa]o.+suficiente|recursos/i.test(text)) {
+                    const m = text.match(/<div[^>]*error[^>]*>([\s\S]{0,200})<\/div>/i);
+                    return { ok: false, error: (m ? m[1] : 'erro').replace(/<[^>]+>/g, '').trim().slice(0, 150), coinsBefore };
+                }
+                return { ok: true, coinsBefore, mintedRequested: amount };
+            } catch (e) {
+                return { ok: false, error: e.message };
+            }
+        }
+
+        async function processVillageCoinB(village) {
+            const status = ensureStatusB(village);
+            const res = await mintCoinsInVillageB(village.id, BCFG.coinsPerCycle || 1);
+            if (res.ok) {
+                status.lastCoin = `+${res.mintedRequested} (${nowStrB()})`;
+                logB(`Vila ${village.name}: cunhou ${res.mintedRequested} moeda(s) (tinha ${res.coinsBefore ?? '?'})`);
+            } else if (!/academia n[ãa]o constru/i.test(res.error || '')) {
+                logB(`Vila ${village.name} coin: ${res.error}`);
+            }
+            updateVillagesPanelB();
+        }
+
+        async function coinLoopB() {
+            logB('Coin loop iniciado');
+            while (BSTATE.coinRunning) {
+                const villages = await getAllVillagesB();
+                if (villages.length === 0) { await sleepB(60000); continue; }
+                logB(`Ciclo Coin: ${villages.length} vilas`);
+                let done = 0;
+                for (const v of villages) {
+                    if (!BSTATE.coinRunning) break;
+                    try { await processVillageCoinB(v); }
+                    catch (e) { logB(`Coin vila ${v.name} crashou: ${e.message}`); }
+                    done++;
+                    if (done % 10 === 0) logB(`Coin progresso: ${done}/${villages.length}`);
+                    await sleepB(jitterB(BCFG.perVillagePauseMs));
+                }
+                if (!BSTATE.coinRunning) break;
+                logB(`Coin passada done, aguardando ${BCFG.cycleMs/1000}s`);
+                const waitUntil = Date.now() + BCFG.cycleMs;
+                while (Date.now() < waitUntil && BSTATE.coinRunning) await sleepB(1000);
+            }
+            logB('Coin loop parado');
+        }
+
+        // ============ SNOB TRAINER (treinar nobres) ============
+        // Mundos COM moedas: precisa N moedas (1, 3, 6, 10, 15...) pra treinar próximo.
+        // Mundos SEM moedas: pop + recursos diretos.
+        // Cap em BCFG.maxNobles pra não recrutar 1000 sem querer.
+
+        function parseSnobTrainFormB(doc) {
+            // Variantes: form com action contendo action=train ou submit="Treinar"
+            const forms = doc.querySelectorAll('form');
+            for (const form of forms) {
+                const action = form.getAttribute('action') || '';
+                const html = form.innerHTML;
+                if (!/(action=train|train.*nobre|noble|recruit_snob)/i.test(action + ' ' + html)) continue;
+                // Botão de submit precisa estar habilitado
+                const submit = form.querySelector('input[type=submit], button[type=submit]');
+                if (submit && (submit.disabled || /disabled/i.test(submit.outerHTML))) continue;
+                const hidden = {};
+                form.querySelectorAll('input').forEach(inp => {
+                    if (inp.name && inp.type !== 'submit') hidden[inp.name] = inp.value || '';
+                });
+                return { action, hidden };
+            }
+            return null;
+        }
+
+        async function trainSnobInVillageB(villageId) {
+            let page;
+            try { page = await fetchSnobScreenB(villageId); }
+            catch (e) { return { ok: false, error: 'snob não acessível: ' + e.message }; }
+            const formInfo = parseSnobTrainFormB(page.doc);
+            if (!formInfo) return { ok: true, note: 'sem form de treinar (sem moedas ou pop?)' };
+            const csrf = parseCsrfB(page.doc);
+
+            const fd = new FormData();
+            for (const [k, v] of Object.entries(formInfo.hidden)) fd.append(k, v);
+            if (csrf) fd.set('h', csrf);
+
+            let actionUrl = formInfo.action;
+            if (actionUrl.startsWith('/') && !actionUrl.includes(`village=${villageId}`)) {
+                actionUrl += (actionUrl.includes('?') ? '&' : '?') + `village=${villageId}`;
+            }
+            try {
+                const r = await fetch(actionUrl, { method: 'POST', body: fd, credentials: 'same-origin' });
+                const text = await r.text();
+                if (/error_box|insufficient|n[ãa]o.+suficiente/i.test(text)) {
+                    const m = text.match(/<div[^>]*error[^>]*>([\s\S]{0,200})<\/div>/i);
+                    return { ok: false, error: (m ? m[1] : 'erro').replace(/<[^>]+>/g, '').trim().slice(0, 150) };
+                }
+                return { ok: true };
+            } catch (e) {
+                return { ok: false, error: e.message };
+            }
+        }
+
+        async function processVillageSnobB(village) {
+            const status = ensureStatusB(village);
+            const res = await trainSnobInVillageB(village.id);
+            if (res.ok && !res.note) {
+                status.lastSnob = `treinou nobre (${nowStrB()})`;
+                logB(`Vila ${village.name}: NOBRE treinado ⚜`);
+            } else if (!res.ok) {
+                logB(`Vila ${village.name} snob: ${res.error}`);
+            }
+            updateVillagesPanelB();
+        }
+
+        async function snobLoopB() {
+            logB('Snob loop iniciado');
+            while (BSTATE.snobRunning) {
+                const villages = await getAllVillagesB();
+                if (villages.length === 0) { await sleepB(60000); continue; }
+                logB(`Ciclo Snob: ${villages.length} vilas`);
+                let done = 0;
+                for (const v of villages) {
+                    if (!BSTATE.snobRunning) break;
+                    try { await processVillageSnobB(v); }
+                    catch (e) { logB(`Snob vila ${v.name} crashou: ${e.message}`); }
+                    done++;
+                    if (done % 10 === 0) logB(`Snob progresso: ${done}/${villages.length}`);
+                    await sleepB(jitterB(BCFG.perVillagePauseMs));
+                }
+                if (!BSTATE.snobRunning) break;
+                logB(`Snob passada done, aguardando ${BCFG.cycleMs/1000}s`);
+                const waitUntil = Date.now() + BCFG.cycleMs;
+                while (Date.now() < waitUntil && BSTATE.snobRunning) await sleepB(1000);
+            }
+            logB('Snob loop parado');
+        }
+
         // ============ PAINEL ============
 
         function injectPanelB() {
@@ -1839,6 +2041,19 @@ console.log('[TW-FARM] stub carregado v0.5.3 — injetando main world script');
   </div>
   <div style="font-size:10px;">Research: <span id="tw-res-status">parado</span></div>
 
+  <div style="font-weight:bold;color:#1f5d1f;margin:8px 0 3px;">⚜ Academia (cunhar + treinar nobre)</div>
+  <div style="display:flex;gap:4px;margin-bottom:4px;">
+    <button id="tw-coin-start" style="flex:1;background:#a07000;color:white;border:none;padding:5px;cursor:pointer;font-weight:bold;border-radius:2px;font-size:11px;">▶ Coin</button>
+    <button id="tw-coin-stop" style="flex:1;background:#7a1f1f;color:white;border:none;padding:5px;cursor:pointer;font-weight:bold;border-radius:2px;font-size:11px;">■ Stop</button>
+    <button id="tw-coin-once" style="flex:1;background:#444;color:white;border:none;padding:5px;cursor:pointer;font-size:10px;border-radius:2px;">▷ 1×</button>
+  </div>
+  <div style="display:flex;gap:4px;margin-bottom:4px;">
+    <button id="tw-snob-start" style="flex:1;background:#5d1f7a;color:white;border:none;padding:5px;cursor:pointer;font-weight:bold;border-radius:2px;font-size:11px;">▶ Nobre</button>
+    <button id="tw-snob-stop" style="flex:1;background:#7a1f1f;color:white;border:none;padding:5px;cursor:pointer;font-weight:bold;border-radius:2px;font-size:11px;">■ Stop</button>
+    <button id="tw-snob-once" style="flex:1;background:#444;color:white;border:none;padding:5px;cursor:pointer;font-size:10px;border-radius:2px;">▷ 1×</button>
+  </div>
+  <div style="font-size:10px;">Coin: <span id="tw-coin-status">parado</span> · Nobre: <span id="tw-snob-status">parado</span></div>
+
   <div style="font-weight:bold;color:#1f5d1f;margin:8px 0 3px;">⚔ Recruit</div>
   <div style="display:flex;gap:4px;margin-bottom:4px;">
     <button id="tw-rec-start" style="flex:1;background:#7a4d1f;color:white;border:none;padding:5px;cursor:pointer;font-weight:bold;border-radius:2px;font-size:11px;">▶ Recruit</button>
@@ -1865,13 +2080,17 @@ console.log('[TW-FARM] stub carregado v0.5.3 — injetando main world script');
                 applyCfgFromPanelB();
                 if (!BSTATE.buildRunning) { BSTATE.buildRunning = true; buildLoopB(); }
                 if (BCFG.researchEnabled && !BSTATE.researchRunning) { BSTATE.researchRunning = true; researchLoopB(); }
+                if (!BSTATE.coinRunning) { BSTATE.coinRunning = true; coinLoopB(); }
+                if (!BSTATE.snobRunning) { BSTATE.snobRunning = true; snobLoopB(); }
                 if (!BSTATE.recruitRunning) { BSTATE.recruitRunning = true; recruitLoopB(); }
                 updateMainPanelB();
-                logB('▶▶▶ START TUDO: Build + Research + Recruit rodando');
+                logB('▶▶▶ START TUDO: Build + Research + Coin + Snob + Recruit rodando');
             };
             document.getElementById('tw-bld-stopall').onclick = () => {
                 BSTATE.buildRunning = false;
                 BSTATE.researchRunning = false;
+                BSTATE.coinRunning = false;
+                BSTATE.snobRunning = false;
                 BSTATE.recruitRunning = false;
                 updateMainPanelB();
                 logB('■ STOP TUDO');
@@ -1966,6 +2185,60 @@ console.log('[TW-FARM] stub carregado v0.5.3 — injetando main world script');
                 }
                 logB(`Research: ciclo debug terminado (${done} vilas)`);
             };
+
+            // ===== COIN handlers =====
+            document.getElementById('tw-coin-start').onclick = () => {
+                applyCfgFromPanelB();
+                if (BSTATE.coinRunning) { logB('Coin já está rodando'); return; }
+                BSTATE.coinRunning = true;
+                updateMainPanelB();
+                coinLoopB();
+            };
+            document.getElementById('tw-coin-stop').onclick = () => {
+                BSTATE.coinRunning = false;
+                updateMainPanelB();
+            };
+            document.getElementById('tw-coin-once').onclick = async () => {
+                applyCfgFromPanelB();
+                logB('Coin: rodando 1 ciclo de debug');
+                const villages = await getAllVillagesB();
+                let done = 0;
+                for (const v of villages) {
+                    try { await processVillageCoinB(v); }
+                    catch (e) { logB(`Coin vila ${v.name} crashou: ${e.message}`); }
+                    done++;
+                    if (done % 10 === 0) logB(`Coin debug progresso: ${done}/${villages.length}`);
+                    await sleepB(jitterB(BCFG.perVillagePauseMs));
+                }
+                logB(`Coin: ciclo debug terminado (${done} vilas)`);
+            };
+
+            // ===== SNOB handlers =====
+            document.getElementById('tw-snob-start').onclick = () => {
+                applyCfgFromPanelB();
+                if (BSTATE.snobRunning) { logB('Snob já está rodando'); return; }
+                BSTATE.snobRunning = true;
+                updateMainPanelB();
+                snobLoopB();
+            };
+            document.getElementById('tw-snob-stop').onclick = () => {
+                BSTATE.snobRunning = false;
+                updateMainPanelB();
+            };
+            document.getElementById('tw-snob-once').onclick = async () => {
+                applyCfgFromPanelB();
+                logB('Snob: rodando 1 ciclo de debug');
+                const villages = await getAllVillagesB();
+                let done = 0;
+                for (const v of villages) {
+                    try { await processVillageSnobB(v); }
+                    catch (e) { logB(`Snob vila ${v.name} crashou: ${e.message}`); }
+                    done++;
+                    if (done % 10 === 0) logB(`Snob debug progresso: ${done}/${villages.length}`);
+                    await sleepB(jitterB(BCFG.perVillagePauseMs));
+                }
+                logB(`Snob: ciclo debug terminado (${done} vilas)`);
+            };
             document.getElementById('tw-bld-edit-template').onclick = () => {
                 const current = JSON.stringify(BSTATE.buildTemplate, null, 0).replace(/\],\[/g, '],\n[');
                 const next = prompt(
@@ -2059,6 +2332,8 @@ console.log('[TW-FARM] stub carregado v0.5.3 — injetando main world script');
             const $ = id => document.getElementById(id);
             if ($('tw-bld-status')) $('tw-bld-status').textContent = BSTATE.buildRunning ? 'rodando ▶' : 'parado';
             if ($('tw-res-status')) $('tw-res-status').textContent = BSTATE.researchRunning ? 'rodando ▶' : 'parado';
+            if ($('tw-coin-status')) $('tw-coin-status').textContent = BSTATE.coinRunning ? 'rodando ▶' : 'parado';
+            if ($('tw-snob-status')) $('tw-snob-status').textContent = BSTATE.snobRunning ? 'rodando ▶' : 'parado';
             if ($('tw-rec-status')) $('tw-rec-status').textContent = BSTATE.recruitRunning ? 'rodando ▶' : 'parado';
             if ($('tw-bld-cycles')) $('tw-bld-cycles').textContent = BSTATE.cycleCount;
         }
@@ -2080,13 +2355,15 @@ console.log('[TW-FARM] stub carregado v0.5.3 — injetando main world script');
             if ($count) $count.textContent = villages.length;
             if (villages.length === 0) { $list.textContent = 'aguardando game_data... (ou clique ⟳ Vilas)'; return; }
             const rows = villages.slice(0, 50).map(v => {
-                const s = BSTATE.villageStatuses[v.id] || { lastBuild: '-', lastRecruit: '-', lastResearch: '-', buildings: null, status: '-' };
+                const s = BSTATE.villageStatuses[v.id] || { lastBuild: '-', lastRecruit: '-', lastResearch: '-', lastCoin: '-', lastSnob: '-', buildings: null, status: '-' };
                 const bldStr = formatBuildingsB(s.buildings);
                 return `<div style="border-bottom:1px dotted #ccc;padding:2px 0;">
                     <b>${v.name}</b> (${v.x}|${v.y})
                     ${s.buildings ? `<span style="color:#000;font-size:9px;font-family:monospace;"> ${bldStr}</span>` : ''}<br>
                     <span style="color:#1f5d1f;font-size:9px;">🏗 ${s.lastBuild}</span> ·
                     <span style="color:#5d1f7a;font-size:9px;">🔬 ${s.lastResearch}</span><br>
+                    <span style="color:#a07000;font-size:9px;">⚜ ${s.lastCoin}</span> ·
+                    <span style="color:#5d1f7a;font-size:9px;">👑 ${s.lastSnob}</span><br>
                     <span style="color:#7a4d1f;font-size:9px;">⚔ ${s.lastRecruit}</span><br>
                     <span style="color:#444;font-size:9px;">${s.status}</span>
                 </div>`;
