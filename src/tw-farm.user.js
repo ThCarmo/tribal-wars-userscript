@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TW Farm + Build + Recruit — ThCarmo
 // @namespace    https://github.com/ThCarmo/tribal-wars-userscript
-// @version      0.5.2
+// @version      0.5.3
 // @description  Farm (2L+1S, raio configurável) + Build Queue (multi-vila) + Recruit + Incoming Tagger
 // @author       Thiago Carmo
 // @match        *://*.tribalwars.com.br/*
@@ -17,7 +17,7 @@
 // Tampermonkey 5.5 stable ignora @inject-into page. Workaround clássico:
 // criar um <script> tag com o código real, anexar ao DOM, o browser executa
 // no MAIN WORLD (mesmo contexto que o DevTools console). Funciona em qualquer TM.
-console.log('[TW-FARM] stub carregado v0.5.2 — injetando main world script');
+console.log('[TW-FARM] stub carregado v0.5.3 — injetando main world script');
 (function injectMainWorldScript() {
     function mainWorldScript() {
         'use strict';
@@ -32,7 +32,7 @@ console.log('[TW-FARM] stub carregado v0.5.2 — injetando main world script');
             const b = document.createElement('div');
             b.id = 'tw-farm-banner-prova';
             b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#d40000;color:#fff;padding:12px;font:bold 14px Arial;text-align:center;border-bottom:3px solid #000;box-shadow:0 2px 10px rgba(0,0,0,0.6);';
-            b.innerHTML = `✅ TW Farm + Build + Research + Recruit v0.5.2 ATIVO — painéis: Farm à direita, Build/Research à esquerda <span style="margin-left:20px;cursor:pointer;text-decoration:underline;" id="tw-farm-banner-close">[fechar]</span>`;
+            b.innerHTML = `✅ TW Farm + Build + Research + Recruit v0.5.3 ATIVO — painéis: Farm à direita, Build/Research à esquerda <span style="margin-left:20px;cursor:pointer;text-decoration:underline;" id="tw-farm-banner-close">[fechar]</span>`;
             (document.body || document.documentElement).insertAdjacentElement('afterbegin', b);
             document.getElementById('tw-farm-banner-close').onclick = () => b.remove();
         };
@@ -41,7 +41,7 @@ console.log('[TW-FARM] stub carregado v0.5.2 — injetando main world script');
         } else {
             document.addEventListener('DOMContentLoaded', showBanner);
         }
-        console.log('[TW-FARM] v0.5.2 carregado (script-tag bridge, main world) em', location.href);
+        console.log('[TW-FARM] v0.5.3 carregado (script-tag bridge, main world) em', location.href);
     } catch (e) {
         console.error('[TW-FARM] banner-prova falhou:', e);
     }
@@ -1016,7 +1016,7 @@ console.log('[TW-FARM] stub carregado v0.5.2 — injetando main world script');
         const sleepB = ms => new Promise(r => setTimeout(r, ms));
 
         const BCFG = {
-            cycleMs: 90000,             // intervalo entre passadas completas (s)
+            cycleMs: 60000,             // intervalo entre passadas completas (s). Mundo speed: 60s. Mundo normal: 300-600s.
             jitterMs: [1000, 3000],     // jitter entre POSTs
             perVillagePauseMs: [1500, 3500],  // jitter entre vilas (ajustado pra escala 100+)
             queueSlots: 2,
@@ -1389,27 +1389,53 @@ console.log('[TW-FARM] stub carregado v0.5.2 — injetando main world script');
             const slotsAvailable = BCFG.queueSlots - queue.length;
             if (slotsAvailable <= 0) {
                 status.status = `fila cheia (${queue.length}/${BCFG.queueSlots})`;
-                logB(`Vila ${village.name}: fila cheia`);
                 updateVillagesPanelB();
                 return;
             }
-            const next = pickNextBuildB(BSTATE.buildTemplate, current, queue);
-            if (!next) {
-                status.status = 'template concluído ✓';
-                logB(`Vila ${village.name}: todos os prédios do template já atingiram nível alvo`);
+
+            // Enche TODOS os slots livres de uma vez (mundo speed = não desperdiça passada).
+            // Simulação local: a cada enqueue, atualiza simulatedQueue pra pickNextBuild
+            // pegar o PRÓXIMO do template, não repetir o mesmo.
+            const simulatedQueue = [...queue];
+            const enqueuedThisPass = [];
+            const errorsThisPass = [];
+
+            for (let slot = 0; slot < slotsAvailable; slot++) {
+                const next = pickNextBuildB(BSTATE.buildTemplate, current, simulatedQueue);
+                if (!next) {
+                    if (enqueuedThisPass.length === 0) {
+                        status.status = 'template concluído ✓';
+                        logB(`Vila ${village.name}: template concluído`);
+                    }
+                    break;
+                }
+                status.status = `enfileirando ${next.building}→${next.toLevel} [slot ${slot+1}/${slotsAvailable}]`;
                 updateVillagesPanelB();
-                return;
+                const res = await enqueueBuildB(village.id, next.building, csrf);
+                if (res.ok) {
+                    enqueuedThisPass.push(`${next.building}→${next.toLevel}`);
+                    // Simula que o prédio foi adicionado na fila pra o próximo pickNext
+                    // escolher o seguinte (não repete o mesmo).
+                    simulatedQueue.push({ building: next.building, targetLevel: next.toLevel });
+                    // Pausa curta entre múltiplos enqueues na MESMA vila (já autenticado)
+                    if (slot < slotsAvailable - 1) {
+                        await sleepB(jitterB([500, 1500]));
+                    }
+                } else {
+                    errorsThisPass.push(`${next.building}:${res.error}`);
+                    // Tipicamente "recursos insuficientes" — para de tentar nessa vila,
+                    // mas mantém o que já enfileirou. Próximo ciclo tenta de novo.
+                    break;
+                }
             }
-            status.status = `tentando ${next.building}→${next.toLevel}`;
-            updateVillagesPanelB();
-            const res = await enqueueBuildB(village.id, next.building, csrf);
-            if (res.ok) {
-                status.lastBuild = `${next.building}→${next.toLevel} (${nowStrB()})`;
-                status.status = `OK ${next.building}→${next.toLevel}${res.ambig ? ' (?)' : ''}`;
-                logB(`Vila ${village.name}: enfileirado ${next.building} nível ${next.toLevel}`);
-            } else {
-                status.status = `falhou ${next.building}: ${res.error}`;
-                logB(`Vila ${village.name}: erro ${next.building}: ${res.error}`);
+
+            if (enqueuedThisPass.length > 0) {
+                status.lastBuild = `${enqueuedThisPass.join(', ')} (${nowStrB()})`;
+                status.status = `✓ ${enqueuedThisPass.length}/${slotsAvailable} enfileirados`;
+                logB(`Vila ${village.name}: ${enqueuedThisPass.length} prédio(s) enfileirado(s) [${enqueuedThisPass.join(', ')}]`);
+            } else if (errorsThisPass.length > 0) {
+                status.status = `falhou: ${errorsThisPass[0]}`;
+                logB(`Vila ${village.name}: erro - ${errorsThisPass[0]}`);
             }
             updateVillagesPanelB();
         }
