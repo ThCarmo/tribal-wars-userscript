@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TW Farm + Build + Recruit — ThCarmo
 // @namespace    https://github.com/ThCarmo/tribal-wars-userscript
-// @version      0.6.0
+// @version      0.7.0
 // @description  Farm (2L+1S, raio configurável) + Build Queue (multi-vila) + Recruit + Incoming Tagger
 // @author       Thiago Carmo
 // @match        *://*.tribalwars.com.br/*
@@ -17,7 +17,7 @@
 // Tampermonkey 5.5 stable ignora @inject-into page. Workaround clássico:
 // criar um <script> tag com o código real, anexar ao DOM, o browser executa
 // no MAIN WORLD (mesmo contexto que o DevTools console). Funciona em qualquer TM.
-console.log('[TW-FARM] stub carregado v0.6.0 — injetando main world script');
+console.log('[TW-FARM] stub carregado v0.7.0 — injetando main world script');
 (function injectMainWorldScript() {
     function mainWorldScript() {
         'use strict';
@@ -32,7 +32,7 @@ console.log('[TW-FARM] stub carregado v0.6.0 — injetando main world script');
             const b = document.createElement('div');
             b.id = 'tw-farm-banner-prova';
             b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#d40000;color:#fff;padding:12px;font:bold 14px Arial;text-align:center;border-bottom:3px solid #000;box-shadow:0 2px 10px rgba(0,0,0,0.6);';
-            b.innerHTML = `✅ TW Farm + Build + Research + Recruit v0.6.0 ATIVO — painéis: Farm à direita, Build/Research à esquerda <span style="margin-left:20px;cursor:pointer;text-decoration:underline;" id="tw-farm-banner-close">[fechar]</span>`;
+            b.innerHTML = `✅ TW Farm + Build + Research + Recruit v0.7.0 ATIVO — painéis: Farm à direita, Build/Research à esquerda <span style="margin-left:20px;cursor:pointer;text-decoration:underline;" id="tw-farm-banner-close">[fechar]</span>`;
             (document.body || document.documentElement).insertAdjacentElement('afterbegin', b);
             document.getElementById('tw-farm-banner-close').onclick = () => b.remove();
         };
@@ -41,7 +41,7 @@ console.log('[TW-FARM] stub carregado v0.6.0 — injetando main world script');
         } else {
             document.addEventListener('DOMContentLoaded', showBanner);
         }
-        console.log('[TW-FARM] v0.6.0 carregado (script-tag bridge, main world) em', location.href);
+        console.log('[TW-FARM] v0.7.0 carregado (script-tag bridge, main world) em', location.href);
     } catch (e) {
         console.error('[TW-FARM] banner-prova falhou:', e);
     }
@@ -1022,50 +1022,103 @@ console.log('[TW-FARM] stub carregado v0.6.0 — injetando main world script');
             queueSlots: 2,
             recruitResourcePct: 0.85,
             recruitMaxPerUnit: 200,
-            researchEnabled: true,      // pesquisa tropas no ferreiro antes de recrutar
-            researchAttempts: 5,        // tenta até 5 pesquisas por vila por passada
-            coinsPerCycle: 1,           // moedas pra cunhar por vila por passada
-            maxNobles: 50,              // cap absoluto de nobres treinados
-            troopMix: {
-                spear:  0.10,
-                sword:  0.05,
-                axe:    0.40,
-                archer: 0.00,
-                spy:    0.05,
-                light:  0.30,
-                heavy:  0.10,
-            },
+            researchEnabled: true,
+            researchAttempts: 5,
+            coinsPerCycle: 1,
+            maxNobles: 50,
+            // === Especialização de vilas (v0.7.0) ===
+            // Quantas vilas serão NOBLE (geradoras de nobres). Resto = OFF (full heavy).
+            // Default: primeiras N da lista. Pode override manual no painel via ✎ Roles.
+            nobleVillageCount: 5,
             debugLog: true,
+        };
+
+        // ===== ROLE CONFIGS (template, mix de tropa, whitelist de pesquisa) =====
+        // OFF = vila de ataque pura, só heavy. Sem barracks, sem garage, sem academia.
+        //       Foco: stable + smith + recursos máximos pra fazer heavy em massa.
+        // NOBLE = vila geradora de nobre. Academia + market alto pra cunhar.
+        //         Escolta mínima de heavy + spy.
+
+        const TEMPLATE_OFF = [
+            // Base
+            ['main', 3], ['wood', 5], ['stone', 5], ['iron', 5],
+            ['farm', 3], ['storage', 3],
+            // Habilitar pesquisa de heavy
+            ['main', 5], ['wood', 10], ['stone', 10], ['iron', 10],
+            ['farm', 7], ['storage', 5], ['smith', 1], ['stable', 1],
+            // Escalando stable + smith pra heavy
+            ['main', 10], ['smith', 5], ['stable', 5],
+            ['wood', 15], ['stone', 15], ['iron', 15],
+            ['farm', 15], ['storage', 10], ['hide', 5],
+            // Heavy lvl 2 disponível
+            ['smith', 10], ['stable', 10],
+            ['wood', 20], ['stone', 20], ['iron', 20],
+            ['farm', 20], ['storage', 15],
+            // Heavy lvl 3 max
+            ['smith', 15], ['stable', 15],
+            ['smith', 20], ['stable', 20],
+            // Recursos max
+            ['main', 15], ['wood', 25], ['stone', 25], ['iron', 25],
+            ['farm', 25], ['storage', 20],
+            ['wood', 30], ['stone', 30], ['iron', 30],
+            ['farm', 30], ['storage', 30],
+            // Defesa final
+            ['wall', 10], ['wall', 20],
+        ];
+
+        const TEMPLATE_NOBLE = [
+            // Base
+            ['main', 3], ['wood', 5], ['stone', 5], ['iron', 5],
+            ['farm', 3], ['storage', 3],
+            // Cedo: market + smith + stable pra escolta
+            ['main', 5], ['wood', 10], ['stone', 10], ['iron', 10],
+            ['farm', 7], ['storage', 5],
+            ['smith', 1], ['market', 1], ['stable', 1],
+            // Academia o quanto antes
+            ['main', 10], ['market', 5],
+            ['wood', 15], ['stone', 15], ['iron', 15],
+            ['farm', 15], ['storage', 10],
+            ['main', 15], ['market', 10], ['snob', 1],   // 1ª academia
+            // Escalando recursos pra cunhar
+            ['wood', 20], ['stone', 20], ['iron', 20],
+            ['farm', 20], ['storage', 20],
+            ['snob', 2],                                  // 2 nobres simultâneos
+            ['market', 15], ['smith', 5], ['stable', 5],
+            ['wood', 25], ['stone', 25], ['iron', 25],
+            ['farm', 25], ['storage', 25],
+            ['snob', 3],                                  // 3 nobres simultâneos
+            ['market', 20], ['smith', 10], ['stable', 10],
+            // Recursos max pra continuar cunhando
+            ['wood', 30], ['stone', 30], ['iron', 30],
+            ['farm', 30], ['storage', 30],
+            ['wall', 10], ['wall', 20],
+        ];
+
+        const MIX_OFF = {
+            // 100% heavy. Spy 0 pra não desperdiçar pop.
+            heavy: 1.0,
+        };
+
+        const MIX_NOBLE = {
+            // Escolta mínima pra defender as moedas + spy pra info
+            heavy: 0.30,
+            spy:   0.05,
+        };
+
+        // Whitelist de pesquisa por role — pra smith não desperdiçar recursos
+        // pesquisando spear/sword/axe/light se ele nunca vai recrutar essas.
+        const RESEARCH_WHITELIST = {
+            OFF:   ['heavy', 'spy'],
+            NOBLE: ['heavy', 'spy', 'snob'],
         };
 
         const jitterB = (range = BCFG.jitterMs) =>
             Math.floor(range[0] + Math.random() * (range[1] - range[0]));
 
-        const DEFAULT_BUILD_TEMPLATE = [
-            ['main', 3], ['wood', 5], ['stone', 5], ['iron', 4],
-            ['farm', 3], ['storage', 3], ['barracks', 1],
-            ['main', 5], ['wood', 8], ['stone', 8], ['iron', 7],
-            ['farm', 5], ['storage', 5], ['hide', 5],
-            ['smith', 1], ['barracks', 5], ['main', 10], ['smith', 5],
-            ['wood', 12], ['stone', 12], ['iron', 10],
-            ['farm', 10], ['storage', 10],
-            ['stable', 3], ['place', 1], ['market', 3],
-            // Academia + market mais cedo pra começar a cunhar moedas o quanto antes
-            ['main', 15], ['market', 5], ['snob', 1],
-            ['stable', 10], ['barracks', 15], ['smith', 15],
-            ['wood', 20], ['stone', 20], ['iron', 18],
-            ['farm', 20], ['storage', 20], ['stable', 15],
-            ['snob', 2],
-            ['wall', 5], ['wall', 10], ['wall', 15], ['wall', 20],
-            ['garage', 1], ['garage', 5],
-            ['snob', 3],
-            ['market', 10],
-            ['wood', 30], ['stone', 30], ['iron', 30],
-            ['farm', 30], ['storage', 30],
-        ];
-
-        const LS_TEMPLATE = 'twBuildTemplate';
-        const LS_TROOP_MIX = 'twBuildTroopMix';
+        const LS_ROLES_OVERRIDE = 'twBuildRolesOverride';  // { villageId: 'OFF'|'NOBLE' }
+        const LS_NOBLE_COUNT = 'twBuildNobleCount';
+        const LS_TEMPLATES_CUSTOM = 'twBuildTemplatesCustom';  // { OFF: [...], NOBLE: [...] }
+        const LS_MIXES_CUSTOM = 'twBuildMixesCustom';          // { OFF: {...}, NOBLE: {...} }
 
         const lsGetB = (key, fallback) => {
             try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }
@@ -1074,6 +1127,10 @@ console.log('[TW-FARM] stub carregado v0.6.0 — injetando main world script');
         const lsSetB = (key, value) => {
             try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
         };
+
+        // Carrega customizações persistidas (overrides do default)
+        const customTpl = lsGetB(LS_TEMPLATES_CUSTOM, {});
+        const customMix = lsGetB(LS_MIXES_CUSTOM, {});
 
         const BSTATE = {
             buildRunning: false,
@@ -1084,10 +1141,19 @@ console.log('[TW-FARM] stub carregado v0.6.0 — injetando main world script');
             cycleCount: 0,
             lastCycleAt: null,
             log: [],
-            buildTemplate: lsGetB(LS_TEMPLATE, DEFAULT_BUILD_TEMPLATE),
-            troopMix: lsGetB(LS_TROOP_MIX, BCFG.troopMix),
+            // === Especialização por role (v0.7.0) ===
+            templates: {
+                OFF:   customTpl.OFF   || TEMPLATE_OFF,
+                NOBLE: customTpl.NOBLE || TEMPLATE_NOBLE,
+            },
+            mixes: {
+                OFF:   customMix.OFF   || MIX_OFF,
+                NOBLE: customMix.NOBLE || MIX_NOBLE,
+            },
+            nobleCount: lsGetB(LS_NOBLE_COUNT, BCFG.nobleVillageCount),
+            rolesOverride: lsGetB(LS_ROLES_OVERRIDE, {}),  // { villageId: 'OFF'|'NOBLE' }
             villageStatuses: {},
-            villagesCache: null,        // cache de getAllVillagesB pra não buscar overview a cada call
+            villagesCache: null,
             villagesCacheAt: 0,
         };
 
@@ -1208,6 +1274,28 @@ console.log('[TW-FARM] stub carregado v0.6.0 — injetando main world script');
         function getAllVillagesSyncB() {
             if (BSTATE.villagesCache) return BSTATE.villagesCache;
             return villagesFromGameDataB();
+        }
+
+        // === Roles ===
+        // Override manual: BSTATE.rolesOverride[villageId] = 'OFF' ou 'NOBLE'
+        // Default: as primeiras BSTATE.nobleCount vilas (na ordem que vieram) = NOBLE.
+        function getVillageRoleB(villageId, allVillages) {
+            const override = BSTATE.rolesOverride[String(villageId)];
+            if (override === 'OFF' || override === 'NOBLE') return override;
+            if (!allVillages) allVillages = getAllVillagesSyncB();
+            const idx = allVillages.findIndex(v => String(v.id) === String(villageId));
+            if (idx === -1) return 'OFF';  // fallback
+            return idx < BSTATE.nobleCount ? 'NOBLE' : 'OFF';
+        }
+
+        function getTemplateForRoleB(role) {
+            return BSTATE.templates[role] || BSTATE.templates.OFF;
+        }
+        function getMixForRoleB(role) {
+            return BSTATE.mixes[role] || BSTATE.mixes.OFF;
+        }
+        function getResearchWhitelistForRoleB(role) {
+            return RESEARCH_WHITELIST[role] || RESEARCH_WHITELIST.OFF;
         }
 
         async function fetchMainScreenB(villageId) {
@@ -1409,8 +1497,10 @@ console.log('[TW-FARM] stub carregado v0.6.0 — injetando main world script');
             const enqueuedThisPass = [];
             const errorsThisPass = [];
 
+            const role = getVillageRoleB(village.id);
+            const template = getTemplateForRoleB(role);
             for (let slot = 0; slot < slotsAvailable; slot++) {
-                const next = pickNextBuildB(BSTATE.buildTemplate, current, simulatedQueue);
+                const next = pickNextBuildB(template, current, simulatedQueue);
                 if (!next) {
                     if (enqueuedThisPass.length === 0) {
                         status.status = 'template concluído ✓';
@@ -1575,9 +1665,12 @@ console.log('[TW-FARM] stub carregado v0.6.0 — injetando main world script');
 
             const resources = parseResourcesB(page.doc);
             const popFree = Math.max(0, resources.popMax - resources.popUsed);
+            // Mix vem do role da vila (OFF / NOBLE), não mais global
+            const role = getVillageRoleB(villageId);
+            const roleMix = getMixForRoleB(role);
             const mix = {};
             for (const u of RECRUIT_SCREENS[screen]) {
-                if (BSTATE.troopMix[u] !== undefined) mix[u] = BSTATE.troopMix[u];
+                if (roleMix[u] !== undefined && roleMix[u] > 0) mix[u] = roleMix[u];
             }
             const amounts = computeRecruitAmountsB(resources, mix, costs, BCFG.recruitMaxPerUnit, popFree);
             const totalUnits = Object.values(amounts).reduce((s, n) => s + n, 0);
@@ -1726,8 +1819,17 @@ console.log('[TW-FARM] stub carregado v0.6.0 — injetando main world script');
             try { doc = await fetchSmithyB(villageId); }
             catch (e) { return { ok: false, error: 'smith não acessível: ' + e.message }; }
             const csrf = parseCsrfB(doc);
-            const options = parseResearchOptionsB(doc);
+            let options = parseResearchOptionsB(doc);
             if (options.length === 0) return { ok: true, researched: [], note: 'sem pesquisas disponíveis' };
+
+            // Filtrar pelo whitelist do role (não desperdiça smith pesquisando o que não vai recrutar)
+            const role = getVillageRoleB(villageId);
+            const whitelist = getResearchWhitelistForRoleB(role);
+            const filtered = options.filter(opt => whitelist.includes(opt.tech));
+            if (filtered.length === 0) {
+                return { ok: true, researched: [], note: `nada no whitelist do role ${role}` };
+            }
+            options = filtered;
 
             const researched = [];
             const failed = [];
@@ -1876,6 +1978,11 @@ console.log('[TW-FARM] stub carregado v0.6.0 — injetando main world script');
 
         async function processVillageCoinB(village) {
             const status = ensureStatusB(village);
+            // Cunhagem só em vilas NOBLE (desperdício em OFF que nem tem academia)
+            if (getVillageRoleB(village.id) !== 'NOBLE') {
+                status.lastCoin = 'skip (não-NOBLE)';
+                return;
+            }
             const res = await mintCoinsInVillageB(village.id, BCFG.coinsPerCycle || 1);
             if (res.ok) {
                 status.lastCoin = `+${res.mintedRequested} (${nowStrB()})`;
@@ -1964,6 +2071,11 @@ console.log('[TW-FARM] stub carregado v0.6.0 — injetando main world script');
 
         async function processVillageSnobB(village) {
             const status = ensureStatusB(village);
+            // Treinar nobre só em vilas NOBLE
+            if (getVillageRoleB(village.id) !== 'NOBLE') {
+                status.lastSnob = 'skip (não-NOBLE)';
+                return;
+            }
             const res = await trainSnobInVillageB(village.id);
             if (res.ok && !res.note) {
                 status.lastSnob = `treinou nobre (${nowStrB()})`;
@@ -2010,6 +2122,15 @@ console.log('[TW-FARM] stub carregado v0.6.0 — injetando main world script');
   <div style="display:flex;gap:4px;margin-bottom:6px;">
     <button id="tw-bld-startall" style="flex:2;background:#0f5f0f;color:white;border:none;padding:8px;cursor:pointer;font-weight:bold;border-radius:2px;font-size:12px;">▶▶▶ START TUDO</button>
     <button id="tw-bld-stopall" style="flex:1;background:#7a1f1f;color:white;border:none;padding:8px;cursor:pointer;font-weight:bold;border-radius:2px;">■ STOP TUDO</button>
+  </div>
+
+  <div style="background:#f0e0d0;border:1px solid #a07000;padding:5px;margin-bottom:6px;font-size:10px;border-radius:2px;">
+    <b>🎭 Roles:</b>
+    <span style="background:#5d1f7a;color:#fff;padding:1px 4px;border-radius:2px;">👑 NOBLE</span> = <input id="tw-roles-noble-count" type="number" value="${BSTATE.nobleCount}" min="0" max="50" style="width:40px;font-size:10px;"/> primeiras vilas
+    (cunha+treina nobre, mix com escolta)<br>
+    <span style="background:#7a1f1f;color:#fff;padding:1px 4px;border-radius:2px;">⚔ OFF</span> = resto (full heavy, sem academia)
+    <button id="tw-roles-edit" style="background:#a07000;color:white;border:none;padding:2px 6px;cursor:pointer;font-size:10px;border-radius:2px;margin-left:4px;">✎ Override</button>
+    <button id="tw-roles-templates" style="background:#1f4d7a;color:white;border:none;padding:2px 6px;cursor:pointer;font-size:10px;border-radius:2px;">✎ Templates</button>
   </div>
 
   <div style="font-weight:bold;color:#1f5d1f;margin:6px 0 3px;">⚙ Config global</div>
@@ -2062,7 +2183,7 @@ console.log('[TW-FARM] stub carregado v0.6.0 — injetando main world script');
     <button id="tw-rec-edit-mix" style="flex:1;background:#1f4d7a;color:white;border:none;padding:5px;cursor:pointer;font-size:10px;border-radius:2px;">✎ Mix</button>
   </div>
   <div style="font-size:10px;">Recruit: <span id="tw-rec-status">parado</span></div>
-  <div style="font-size:9px;color:#666;margin-top:2px;">Mix atual: <span id="tw-rec-mix-display">${formatMixB(BSTATE.troopMix)}</span></div>
+  <div style="font-size:9px;color:#666;margin-top:2px;">Mix: <span id="tw-rec-mix-display">OFF:${formatMixB(BSTATE.mixes.OFF)} | NOBLE:${formatMixB(BSTATE.mixes.NOBLE)}</span></div>
 
   <hr style="border:none;border-top:1px solid #1f5d1f;margin:8px 0 6px;">
 
@@ -2240,23 +2361,75 @@ console.log('[TW-FARM] stub carregado v0.6.0 — injetando main world script');
                 logB(`Snob: ciclo debug terminado (${done} vilas)`);
             };
             document.getElementById('tw-bld-edit-template').onclick = () => {
-                const current = JSON.stringify(BSTATE.buildTemplate, null, 0).replace(/\],\[/g, '],\n[');
+                const role = prompt('Editar template de qual role? Digite OFF ou NOBLE:', 'OFF');
+                if (!role || (role !== 'OFF' && role !== 'NOBLE')) return;
+                const current = JSON.stringify(BSTATE.templates[role], null, 0).replace(/\],\[/g, '],\n[');
                 const next = prompt(
-                    'Template de construção — array JSON [["building", nível], ...]\n' +
-                    'Buildings: main, barracks, stable, garage, snob, smith, place, market, wood, stone, iron, farm, storage, hide, wall, watchtower, statue\n\n' +
-                    'Vai do início ao fim, pulando o que já está construído.',
+                    `Template ${role} — array JSON [["building", nível], ...]\n` +
+                    'Buildings: main, barracks, stable, garage, snob, smith, place, market, wood, stone, iron, farm, storage, hide, wall',
                     current
                 );
                 if (next === null) return;
                 try {
                     const parsed = JSON.parse(next);
                     if (!Array.isArray(parsed)) throw new Error('precisa ser array');
-                    BSTATE.buildTemplate = parsed;
-                    lsSetB(LS_TEMPLATE, parsed);
-                    logB(`Template atualizado: ${parsed.length} entradas`);
+                    BSTATE.templates[role] = parsed;
+                    const custom = lsGetB(LS_TEMPLATES_CUSTOM, {});
+                    custom[role] = parsed;
+                    lsSetB(LS_TEMPLATES_CUSTOM, custom);
+                    logB(`Template ${role} atualizado: ${parsed.length} entradas`);
                 } catch (e) {
                     alert('Template inválido: ' + e.message);
                 }
+            };
+
+            // === Roles handlers ===
+            document.getElementById('tw-roles-noble-count').onchange = (e) => {
+                const n = parseInt(e.target.value, 10);
+                if (Number.isFinite(n) && n >= 0) {
+                    BSTATE.nobleCount = n;
+                    lsSetB(LS_NOBLE_COUNT, n);
+                    logB(`Vilas NOBLE = primeiras ${n} da lista`);
+                    updateVillagesPanelB();
+                }
+            };
+            document.getElementById('tw-roles-edit').onclick = () => {
+                const current = JSON.stringify(BSTATE.rolesOverride, null, 2);
+                const next = prompt(
+                    'Override manual de roles — JSON {"villageId": "OFF" ou "NOBLE"}\n' +
+                    'Use o ID da vila (aparece no painel ao lado do nome).\n' +
+                    'Vilas sem override usam a regra default (primeiras N = NOBLE).',
+                    current
+                );
+                if (next === null) return;
+                try {
+                    const parsed = JSON.parse(next);
+                    if (typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('precisa ser objeto');
+                    BSTATE.rolesOverride = parsed;
+                    lsSetB(LS_ROLES_OVERRIDE, parsed);
+                    logB(`Override de roles atualizado: ${Object.keys(parsed).length} vilas com override manual`);
+                    updateVillagesPanelB();
+                } catch (e) {
+                    alert('Override inválido: ' + e.message);
+                }
+            };
+            document.getElementById('tw-roles-templates').onclick = () => {
+                const role = prompt('Editar template de qual role? Digite OFF ou NOBLE:', 'OFF');
+                if (!role || (role !== 'OFF' && role !== 'NOBLE')) return;
+                const current = JSON.stringify(BSTATE.templates[role], null, 0).replace(/\],\[/g, '],\n[');
+                const next = prompt(
+                    `Template ${role} — array JSON [["building", nível], ...]`,
+                    current
+                );
+                if (next === null) return;
+                try {
+                    const parsed = JSON.parse(next);
+                    BSTATE.templates[role] = parsed;
+                    const custom = lsGetB(LS_TEMPLATES_CUSTOM, {});
+                    custom[role] = parsed;
+                    lsSetB(LS_TEMPLATES_CUSTOM, custom);
+                    logB(`Template ${role} atualizado: ${parsed.length} entradas`);
+                } catch (e) { alert('Template inválido: ' + e.message); }
             };
 
             document.getElementById('tw-rec-start').onclick = () => {
@@ -2288,20 +2461,25 @@ console.log('[TW-FARM] stub carregado v0.6.0 — injetando main world script');
                 logB(`Recruit: ciclo debug terminado (${done} vilas)`);
             };
             document.getElementById('tw-rec-edit-mix').onclick = () => {
-                const current = JSON.stringify(BSTATE.troopMix, null, 0);
+                const role = prompt('Editar mix de qual role? Digite OFF ou NOBLE:', 'OFF');
+                if (!role || (role !== 'OFF' && role !== 'NOBLE')) return;
+                const current = JSON.stringify(BSTATE.mixes[role], null, 0);
                 const next = prompt(
-                    'Mix de tropa — objeto JSON {unit: peso, ...}\n' +
-                    'Pesos relativos. Ex: {"axe":0.4,"light":0.3,"spy":0.05}\n' +
+                    `Mix ${role} — objeto JSON {unit: peso, ...}\n` +
+                    'Ex full heavy: {"heavy":1.0}\n' +
+                    'Ex escolta: {"heavy":0.3,"spy":0.05}\n' +
                     'Unidades: spear sword axe archer spy light marcher heavy ram catapult',
                     current
                 );
                 if (next === null) return;
                 try {
                     const parsed = JSON.parse(next);
-                    BSTATE.troopMix = parsed;
-                    lsSetB(LS_TROOP_MIX, parsed);
-                    document.getElementById('tw-rec-mix-display').textContent = formatMixB(parsed);
-                    logB(`Mix atualizado: ${JSON.stringify(parsed)}`);
+                    BSTATE.mixes[role] = parsed;
+                    const custom = lsGetB(LS_MIXES_CUSTOM, {});
+                    custom[role] = parsed;
+                    lsSetB(LS_MIXES_CUSTOM, custom);
+                    document.getElementById('tw-rec-mix-display').textContent = `OFF:${formatMixB(BSTATE.mixes.OFF)} | NOBLE:${formatMixB(BSTATE.mixes.NOBLE)}`;
+                    logB(`Mix ${role} atualizado: ${JSON.stringify(parsed)}`);
                 } catch (e) {
                     alert('Mix inválido: ' + e.message);
                 }
@@ -2357,8 +2535,13 @@ console.log('[TW-FARM] stub carregado v0.6.0 — injetando main world script');
             const rows = villages.slice(0, 50).map(v => {
                 const s = BSTATE.villageStatuses[v.id] || { lastBuild: '-', lastRecruit: '-', lastResearch: '-', lastCoin: '-', lastSnob: '-', buildings: null, status: '-' };
                 const bldStr = formatBuildingsB(s.buildings);
+                const role = getVillageRoleB(v.id, villages);
+                const isOverride = !!BSTATE.rolesOverride[String(v.id)];
+                const roleBadge = role === 'NOBLE'
+                    ? `<span style="background:#5d1f7a;color:#fff;font-size:9px;padding:1px 4px;border-radius:2px;font-weight:bold;">👑 NOBLE${isOverride ? '*' : ''}</span>`
+                    : `<span style="background:#7a1f1f;color:#fff;font-size:9px;padding:1px 4px;border-radius:2px;font-weight:bold;">⚔ OFF${isOverride ? '*' : ''}</span>`;
                 return `<div style="border-bottom:1px dotted #ccc;padding:2px 0;">
-                    <b>${v.name}</b> (${v.x}|${v.y})
+                    ${roleBadge} <b>${v.name}</b> (${v.x}|${v.y})
                     ${s.buildings ? `<span style="color:#000;font-size:9px;font-family:monospace;"> ${bldStr}</span>` : ''}<br>
                     <span style="color:#1f5d1f;font-size:9px;">🏗 ${s.lastBuild}</span> ·
                     <span style="color:#5d1f7a;font-size:9px;">🔬 ${s.lastResearch}</span><br>
