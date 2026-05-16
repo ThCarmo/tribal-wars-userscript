@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TW Farm + Build + Recruit — ThCarmo
 // @namespace    https://github.com/ThCarmo/tribal-wars-userscript
-// @version      0.7.7
+// @version      0.7.8
 // @description  Farm (2L+1S, raio configurável) + Build Queue (multi-vila) + Recruit + Incoming Tagger
 // @author       Thiago Carmo
 // @match        *://*.tribalwars.com.br/*
@@ -17,7 +17,7 @@
 // Tampermonkey 5.5 stable ignora @inject-into page. Workaround clássico:
 // criar um <script> tag com o código real, anexar ao DOM, o browser executa
 // no MAIN WORLD (mesmo contexto que o DevTools console). Funciona em qualquer TM.
-console.log('[TW-FARM] stub carregado v0.7.7 — injetando main world script');
+console.log('[TW-FARM] stub carregado v0.7.8 — injetando main world script');
 (function injectMainWorldScript() {
     function mainWorldScript() {
         'use strict';
@@ -32,7 +32,7 @@ console.log('[TW-FARM] stub carregado v0.7.7 — injetando main world script');
             const b = document.createElement('div');
             b.id = 'tw-farm-banner-prova';
             b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#d40000;color:#fff;padding:12px;font:bold 14px Arial;text-align:center;border-bottom:3px solid #000;box-shadow:0 2px 10px rgba(0,0,0,0.6);';
-            b.innerHTML = `✅ TW Farm + Build + Research + Recruit v0.7.7 ATIVO — painéis: Farm à direita, Build/Research à esquerda <span style="margin-left:20px;cursor:pointer;text-decoration:underline;" id="tw-farm-banner-close">[fechar]</span>`;
+            b.innerHTML = `✅ TW Farm + Build + Research + Recruit v0.7.8 ATIVO — painéis: Farm à direita, Build/Research à esquerda <span style="margin-left:20px;cursor:pointer;text-decoration:underline;" id="tw-farm-banner-close">[fechar]</span>`;
             (document.body || document.documentElement).insertAdjacentElement('afterbegin', b);
             document.getElementById('tw-farm-banner-close').onclick = () => b.remove();
         };
@@ -41,7 +41,7 @@ console.log('[TW-FARM] stub carregado v0.7.7 — injetando main world script');
         } else {
             document.addEventListener('DOMContentLoaded', showBanner);
         }
-        console.log('[TW-FARM] v0.7.7 carregado (script-tag bridge, main world) em', location.href);
+        console.log('[TW-FARM] v0.7.8 carregado (script-tag bridge, main world) em', location.href);
     } catch (e) {
         console.error('[TW-FARM] banner-prova falhou:', e);
     }
@@ -1026,8 +1026,8 @@ console.log('[TW-FARM] stub carregado v0.7.7 — injetando main world script');
             researchAttempts: 5,
             coinsPerCycle: 1,
             maxNobles: 50,
-            // === Especialização de vilas (v0.7.7: TODAS uniform) ===
-            // Default v0.7.7: 200 (> 100) = todas as vilas são NOBLE (template
+            // === Especialização de vilas (v0.7.8: TODAS uniform) ===
+            // Default v0.7.8: 200 (> 100) = todas as vilas são NOBLE (template
             // universal, cunham moedas + treinam nobre + recrutam heavy).
             // Pra voltar à especialização (poucas vilas NOBLE, resto OFF heavy
             // puro), diminuir esse número no painel.
@@ -1042,7 +1042,7 @@ console.log('[TW-FARM] stub carregado v0.7.7 — injetando main world script');
         //         Escolta mínima de heavy + spy.
 
         // ============ TEMPLATE UNIVERSAL ============
-        // Decisão do user (v0.7.7): todas as vilas fazem tudo. So precisa de:
+        // Decisão do user (v0.7.8): todas as vilas fazem tudo. So precisa de:
         //   recursos + farm + storage + smith + stable + market + academia
         // NAO constroi: barracks (sem lança/espada/axe), garage (sem
         // ariete/cat), hide (sem esconder recurso de quem ataca), wall
@@ -1050,7 +1050,7 @@ console.log('[TW-FARM] stub carregado v0.7.7 — injetando main world script');
         // Academia (snob) maxima nivel 1 nesse mundo — academia + cunhagem
         // + treino de nobre rolam em TODAS as vilas.
 
-        // Template ESTRITO (v0.7.7): smith 20 + snob 1 + stable 10 + pré-reqs.
+        // Template ESTRITO (v0.7.8): smith 20 + snob 1 + stable 10 + pré-reqs.
         // Após completar, vila para de construir (template concluído ✓).
         // Loops de coin/snob/recruit continuam rodando normalmente.
         //
@@ -1126,15 +1126,15 @@ console.log('[TW-FARM] stub carregado v0.7.7 — injetando main world script');
             try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
         };
 
-        // Migration v0.7.7: nobleCount mudou de default 5 → 200 (todas viram NOBLE).
+        // Migration v0.7.8: nobleCount mudou de default 5 → 200 (todas viram NOBLE).
         // Se o user tem valor antigo salvo (era 5 ou menor) E nunca passou pela
-        // v0.7.7, reseta pro novo default. Se mexeu manualmente pra >5, respeita.
+        // v0.7.8, reseta pro novo default. Se mexeu manualmente pra >5, respeita.
         const LS_VERSION_KEY = 'twBuildLastSeenVersion';
         const seenVersion = lsGetB(LS_VERSION_KEY, null);
         if (seenVersion !== '0.7.4') {
             const oldCount = lsGetB(LS_NOBLE_COUNT, null);
             if (oldCount === null || oldCount <= 5) {
-                // Reseta pro novo default da v0.7.7
+                // Reseta pro novo default da v0.7.8
                 localStorage.removeItem(LS_NOBLE_COUNT);
             }
             lsSetB(LS_VERSION_KEY, '0.7.4');
@@ -1153,7 +1153,7 @@ console.log('[TW-FARM] stub carregado v0.7.7 — injetando main world script');
             cycleCount: 0,
             lastCycleAt: null,
             log: [],
-            // === Especialização por role (v0.7.7) ===
+            // === Especialização por role (v0.7.8) ===
             templates: {
                 OFF:   customTpl.OFF   || TEMPLATE_OFF,
                 NOBLE: customTpl.NOBLE || TEMPLATE_NOBLE,
@@ -1457,9 +1457,11 @@ console.log('[TW-FARM] stub carregado v0.7.7 — injetando main world script');
                     return { ok: false, error: String(body.error[0]).slice(0, 150) };
                 }
                 if (body && body.response) return { ok: true };
-                if (/error_box|insufficient|recursos|n[ãa]o.+suficiente|premium/i.test(text)) {
-                    const m = text.match(/<div[^>]*error[^>]*>([\s\S]{0,200})<\/div>/i);
-                    return { ok: false, error: (m ? m[1] : 'erro desconhecido').replace(/<[^>]+>/g, '').trim().slice(0, 150) };
+                // PARSER CONSERVADOR: só erro se div.error_box explícito
+                const errBoxMatch = text.match(/<div[^>]*class\s*=\s*["'][^"']*\berror_box\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/i);
+                if (errBoxMatch) {
+                    const errText = errBoxMatch[1].replace(/<[^>]+>/g, '').trim().slice(0, 150);
+                    return { ok: false, error: errText || 'error_box vazio' };
                 }
                 if (resp.ok) return { ok: true, ambig: true };
                 return { ok: false, error: `HTTP ${resp.status}` };
@@ -1722,13 +1724,15 @@ console.log('[TW-FARM] stub carregado v0.7.7 — injetando main world script');
             try {
                 const resp = await fetch(action, { method: 'POST', body: fd, credentials: 'same-origin' });
                 const text = await resp.text();
-                if (/error_box|insufficient|n[ãa]o.+suficiente/i.test(text)) {
-                    const m = text.match(/<div[^>]*error[^>]*>([\s\S]{0,200})<\/div>/i);
-                    return { ok: false, error: (m ? m[1] : 'erro').replace(/<[^>]+>/g, '').trim().slice(0, 150), sent: amounts };
+                // PARSER CONSERVADOR: só erro se div.error_box explícito
+                const errBoxMatch = text.match(/<div[^>]*class\s*=\s*["'][^"']*\berror_box\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/i);
+                if (errBoxMatch) {
+                    const errText = errBoxMatch[1].replace(/<[^>]+>/g, '').trim().slice(0, 150);
+                    return { ok: false, error: errText || 'error_box vazio', sent: amounts };
                 }
                 return { ok: true, sent: amounts };
             } catch (e) {
-                return { ok: false, error: e.message, sent: amounts };
+                return { ok: false, error: e.message || 'fetch crashou', sent: amounts };
             }
         }
 
@@ -1996,13 +2000,27 @@ console.log('[TW-FARM] stub carregado v0.7.7 — injetando main world script');
             try {
                 const r = await fetch(actionUrl, { method: 'POST', body: fd, credentials: 'same-origin' });
                 const text = await r.text();
-                if (/error_box|insufficient|n[ãa]o.+suficiente|recursos/i.test(text)) {
-                    const m = text.match(/<div[^>]*error[^>]*>([\s\S]{0,200})<\/div>/i);
-                    return { ok: false, error: (m ? m[1] : 'erro').replace(/<[^>]+>/g, '').trim().slice(0, 150), coinsBefore };
+                // PARSER CONSERVADOR: só considera erro se achar div.error_box EXPLÍCITO.
+                // Antes: usava regex genérico que pegava qualquer página com "recursos"
+                // (label do topo) e dava falso-positivo.
+                const errBoxMatch = text.match(/<div[^>]*class\s*=\s*["'][^"']*\berror_box\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/i);
+                if (errBoxMatch) {
+                    const errText = errBoxMatch[1].replace(/<[^>]+>/g, '').trim().slice(0, 150);
+                    return { ok: false, error: errText || 'error_box vazio', coinsBefore };
                 }
-                return { ok: true, coinsBefore, mintedRequested: amount };
+                // Verifica se voltou a página de cunhagem com novo coin count (sucesso real)
+                const newDoc = new DOMParser().parseFromString(text, 'text/html');
+                const coinsAfter = parseCoinCountB(newDoc);
+                return {
+                    ok: true,
+                    coinsBefore,
+                    coinsAfter,
+                    mintedRequested: amount,
+                    actuallyMinted: (coinsAfter !== null && coinsBefore !== null)
+                        ? Math.max(0, coinsAfter - coinsBefore) : null,
+                };
             } catch (e) {
-                return { ok: false, error: e.message };
+                return { ok: false, error: e.message || 'fetch crashou' };
             }
         }
 
@@ -2014,13 +2032,21 @@ console.log('[TW-FARM] stub carregado v0.7.7 — injetando main world script');
             }
             const res = await mintCoinsInVillageB(village.id, BCFG.coinsPerCycle || 1);
             if (res.ok) {
-                status.lastCoin = `+${res.mintedRequested} (${nowStrB()})`;
-                logB(`Vila ${village.name}: cunhou ${res.mintedRequested} moeda(s) (tinha ${res.coinsBefore ?? '?'})`);
+                const actual = res.actuallyMinted;
+                if (actual !== null && actual === 0) {
+                    // Não cunhou de verdade — provavelmente sem recursos. Silencioso.
+                    status.lastCoin = `sem recursos? (${nowStrB()})`;
+                } else {
+                    const cnt = actual !== null ? actual : res.mintedRequested;
+                    status.lastCoin = `+${cnt} → ${res.coinsAfter ?? '?'} (${nowStrB()})`;
+                    if (actual === null || actual > 0) {
+                        logB(`Vila ${village.name}: cunhou ${cnt} moeda(s) (tinha ${res.coinsBefore ?? '?'}, tem ${res.coinsAfter ?? '?'})`);
+                    }
+                }
             } else {
                 const err = (res.error || '').trim() || 'erro vazio do servidor';
                 status.lastCoin = `falhou: ${err.slice(0, 30)}`;
-                // Silencia erros esperados: academia não construída ainda OU sem recursos
-                if (!/academia n[ãa]o constru|sem form|n[ãa]o.+suficiente|recursos/i.test(err)) {
+                if (!/academia n[ãa]o constru|sem form|n[ãa]o.+suficiente|recursos|error_box vazio/i.test(err)) {
                     logB(`Vila ${village.name} coin: ${err}`);
                 }
             }
@@ -2093,13 +2119,15 @@ console.log('[TW-FARM] stub carregado v0.7.7 — injetando main world script');
             try {
                 const r = await fetch(actionUrl, { method: 'POST', body: fd, credentials: 'same-origin' });
                 const text = await r.text();
-                if (/error_box|insufficient|n[ãa]o.+suficiente/i.test(text)) {
-                    const m = text.match(/<div[^>]*error[^>]*>([\s\S]{0,200})<\/div>/i);
-                    return { ok: false, error: (m ? m[1] : 'erro').replace(/<[^>]+>/g, '').trim().slice(0, 150) };
+                // PARSER CONSERVADOR (igual coin): só erro se div.error_box explícito
+                const errBoxMatch = text.match(/<div[^>]*class\s*=\s*["'][^"']*\berror_box\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/i);
+                if (errBoxMatch) {
+                    const errText = errBoxMatch[1].replace(/<[^>]+>/g, '').trim().slice(0, 150);
+                    return { ok: false, error: errText || 'error_box vazio' };
                 }
                 return { ok: true };
             } catch (e) {
-                return { ok: false, error: e.message };
+                return { ok: false, error: e.message || 'fetch crashou' };
             }
         }
 
