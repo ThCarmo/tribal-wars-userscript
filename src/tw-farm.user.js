@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TW Farm + Build + Recruit — ThCarmo
 // @namespace    https://github.com/ThCarmo/tribal-wars-userscript
-// @version      0.8.0
+// @version      0.8.1
 // @description  Farm (2L+1S, raio configurável) + Build Queue (multi-vila) + Recruit + Incoming Tagger
 // @author       Thiago Carmo
 // @match        *://*.tribalwars.com.br/*
@@ -17,7 +17,7 @@
 // Tampermonkey 5.5 stable ignora @inject-into page. Workaround clássico:
 // criar um <script> tag com o código real, anexar ao DOM, o browser executa
 // no MAIN WORLD (mesmo contexto que o DevTools console). Funciona em qualquer TM.
-console.log('[TW-FARM] stub carregado v0.8.0 — injetando main world script');
+console.log('[TW-FARM] stub carregado v0.8.1 — injetando main world script');
 (function injectMainWorldScript() {
     function mainWorldScript() {
         'use strict';
@@ -32,7 +32,7 @@ console.log('[TW-FARM] stub carregado v0.8.0 — injetando main world script');
             const b = document.createElement('div');
             b.id = 'tw-farm-banner-prova';
             b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#d40000;color:#fff;padding:12px;font:bold 14px Arial;text-align:center;border-bottom:3px solid #000;box-shadow:0 2px 10px rgba(0,0,0,0.6);';
-            b.innerHTML = `✅ TW Farm + Build + Research + Recruit v0.8.0 ATIVO — painéis: Farm à direita, Build/Research à esquerda <span style="margin-left:20px;cursor:pointer;text-decoration:underline;" id="tw-farm-banner-close">[fechar]</span>`;
+            b.innerHTML = `✅ TW Farm + Build + Research + Recruit v0.8.1 ATIVO — painéis: Farm à direita, Build/Research à esquerda <span style="margin-left:20px;cursor:pointer;text-decoration:underline;" id="tw-farm-banner-close">[fechar]</span>`;
             (document.body || document.documentElement).insertAdjacentElement('afterbegin', b);
             document.getElementById('tw-farm-banner-close').onclick = () => b.remove();
         };
@@ -41,7 +41,7 @@ console.log('[TW-FARM] stub carregado v0.8.0 — injetando main world script');
         } else {
             document.addEventListener('DOMContentLoaded', showBanner);
         }
-        console.log('[TW-FARM] v0.8.0 carregado (script-tag bridge, main world) em', location.href);
+        console.log('[TW-FARM] v0.8.1 carregado (script-tag bridge, main world) em', location.href);
     } catch (e) {
         console.error('[TW-FARM] banner-prova falhou:', e);
     }
@@ -1026,8 +1026,8 @@ console.log('[TW-FARM] stub carregado v0.8.0 — injetando main world script');
             researchAttempts: 5,
             coinsPerCycle: 1,
             maxNobles: 50,
-            // === Especialização de vilas (v0.8.0: TODAS uniform) ===
-            // Default v0.8.0: 200 (> 100) = todas as vilas são NOBLE (template
+            // === Especialização de vilas (v0.8.1: TODAS uniform) ===
+            // Default v0.8.1: 200 (> 100) = todas as vilas são NOBLE (template
             // universal, cunham moedas + treinam nobre + recrutam heavy).
             // Pra voltar à especialização (poucas vilas NOBLE, resto OFF heavy
             // puro), diminuir esse número no painel.
@@ -1042,7 +1042,7 @@ console.log('[TW-FARM] stub carregado v0.8.0 — injetando main world script');
         //         Escolta mínima de heavy + spy.
 
         // ============ TEMPLATE UNIVERSAL ============
-        // Decisão do user (v0.8.0): todas as vilas fazem tudo. So precisa de:
+        // Decisão do user (v0.8.1): todas as vilas fazem tudo. So precisa de:
         //   recursos + farm + storage + smith + stable + market + academia
         // NAO constroi: barracks (sem lança/espada/axe), garage (sem
         // ariete/cat), hide (sem esconder recurso de quem ataca), wall
@@ -1050,7 +1050,7 @@ console.log('[TW-FARM] stub carregado v0.8.0 — injetando main world script');
         // Academia (snob) maxima nivel 1 nesse mundo — academia + cunhagem
         // + treino de nobre rolam em TODAS as vilas.
 
-        // Template ESTRITO (v0.8.0): smith 20 + snob 1 + stable 10 + pré-reqs.
+        // Template ESTRITO (v0.8.1): smith 20 + snob 1 + stable 10 + pré-reqs.
         // Após completar, vila para de construir (template concluído ✓).
         // Loops de coin/snob/recruit continuam rodando normalmente.
         //
@@ -1126,15 +1126,15 @@ console.log('[TW-FARM] stub carregado v0.8.0 — injetando main world script');
             try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
         };
 
-        // Migration v0.8.0: nobleCount mudou de default 5 → 200 (todas viram NOBLE).
+        // Migration v0.8.1: nobleCount mudou de default 5 → 200 (todas viram NOBLE).
         // Se o user tem valor antigo salvo (era 5 ou menor) E nunca passou pela
-        // v0.8.0, reseta pro novo default. Se mexeu manualmente pra >5, respeita.
+        // v0.8.1, reseta pro novo default. Se mexeu manualmente pra >5, respeita.
         const LS_VERSION_KEY = 'twBuildLastSeenVersion';
         const seenVersion = lsGetB(LS_VERSION_KEY, null);
         if (seenVersion !== '0.7.4') {
             const oldCount = lsGetB(LS_NOBLE_COUNT, null);
             if (oldCount === null || oldCount <= 5) {
-                // Reseta pro novo default da v0.8.0
+                // Reseta pro novo default da v0.8.1
                 localStorage.removeItem(LS_NOBLE_COUNT);
             }
             lsSetB(LS_VERSION_KEY, '0.7.4');
@@ -1153,7 +1153,7 @@ console.log('[TW-FARM] stub carregado v0.8.0 — injetando main world script');
             cycleCount: 0,
             lastCycleAt: null,
             log: [],
-            // === Especialização por role (v0.8.0) ===
+            // === Especialização por role (v0.8.1) ===
             templates: {
                 OFF:   customTpl.OFF   || TEMPLATE_OFF,
                 NOBLE: customTpl.NOBLE || TEMPLATE_NOBLE,
@@ -1267,7 +1267,7 @@ console.log('[TW-FARM] stub carregado v0.8.0 — injetando main world script');
             return [];
         }
 
-        // ============ ATAQUE DE CONQUISTA (v0.8.0) ============
+        // ============ ATAQUE DE CONQUISTA (v0.8.1) ============
         // Localiza jogador alvo via /map/player.txt, vilas dele via /map/village.txt,
         // calcula PLANO (qual nossa vila ataca qual vila dele, com 4 NT por alvo),
         // mostra plano pra usuário confirmar, executa com guard-rails.
@@ -1506,22 +1506,51 @@ console.log('[TW-FARM] stub carregado v0.8.0 — injetando main world script');
         // de TODAS as vilas do jogador numa tabela só. Mais barato que iterar
         // cada vila fetchando stable/barracks/garage.
 
+        // Mapeamento PT-BR → unit ID (fallback quando header não tem class unit-item-*)
+        const UNIT_NAME_TO_ID = {
+            'lanceiro': 'spear', 'lança': 'spear', 'lanca': 'spear',
+            'espadachim': 'sword', 'espada': 'sword',
+            'bárbaro': 'axe', 'barbaro': 'axe', 'machadeiro': 'axe',
+            'arqueiro': 'archer', 'arq': 'archer',
+            'explorador': 'spy', 'espião': 'spy', 'espiao': 'spy',
+            'cavalaria leve': 'light', 'cav leve': 'light',
+            'arqueiro montado': 'marcher', 'arq mont': 'marcher',
+            'cavalaria pesada': 'heavy', 'paladino pesado': 'heavy', 'cav pesada': 'heavy',
+            'ariete': 'ram', 'aríete': 'ram',
+            'catapulta': 'catapult',
+            'paladino': 'knight', 'cavaleiro': 'knight',
+            'nobre': 'snob', 'apóstolo': 'snob', 'apostolo': 'snob',
+            'milícia': 'militia', 'milicia': 'militia',
+        };
+
         async function fetchTroopsOverviewB() {
+            // Tenta várias URLs e modos
             const urls = [
                 '/game.php?screen=overview_villages&mode=units',
-                '/game.php?screen=overview_villages&mode=units&type=own',
-                '/game.php?screen=overview_villages&mode=units&type=in_village',
+                '/game.php?screen=overview_villages&mode=units&group=0&page=-1',  // todas as páginas
+                '/game.php?screen=overview_villages&mode=combined',
             ];
             for (const url of urls) {
                 try {
                     const resp = await fetch(url, { credentials: 'same-origin' });
                     if (!resp.ok) continue;
                     const html = await resp.text();
+                    // Salva pra inspeção/debug
+                    wB.TW_BUILD_TROOPS_RAW_HTML = html.slice(0, 50000);
+                    wB.TW_BUILD_TROOPS_RAW_URL = url;
                     const doc = new DOMParser().parseFromString(html, 'text/html');
                     const result = parseTroopsTableB(doc);
-                    if (result.rows.length > 0) {
-                        logB(`tropas ${url} → ${result.rows.length} vilas, ${result.unitTypes.length} unidades`);
-                        return result;
+                    logB(`tropas ${url} → ${result.rows.length} linhas, ${result.unitTypes.length} unidades detectadas: [${result.unitTypes.join(',')}]`);
+                    if (result.rows.length > 0 && result.unitTypes.length > 0) {
+                        // Agrega multi-linhas por vila (se a tabela mostra "em casa" + "fora")
+                        const aggregated = aggregateRowsByVillageB(result.rows);
+                        const totals = {};
+                        aggregated.forEach(r => {
+                            for (const [u, n] of Object.entries(r.units)) {
+                                totals[u] = (totals[u] || 0) + n;
+                            }
+                        });
+                        return { rows: aggregated, unitTypes: result.unitTypes, totals, url };
                     }
                 } catch (e) {
                     logB(`tropas ${url} crashou: ${e.message}`);
@@ -1530,50 +1559,89 @@ console.log('[TW-FARM] stub carregado v0.8.0 — injetando main world script');
             return { rows: [], unitTypes: [], totals: {} };
         }
 
-        function parseTroopsTableB(doc) {
-            // Procura tabela de unidades. Possíveis IDs/classes:
-            //   table.vis (genérico), #units_table, table[id*=units], tabela com header de unidades
-            const result = { rows: [], unitTypes: [], totals: {} };
-
-            // Identifica unidades pelos ícones .unit_link / .unit_sprite ou pelo
-            // header com classes unit-item-*.
-            // Estratégia: pega TODAS as tabelas, identifica a que tem mais row
-            // com link village= + N colunas numéricas.
-            const tables = doc.querySelectorAll('table');
-            let bestTable = null;
-            let bestRowCount = 0;
-            tables.forEach(t => {
-                const rowsWithVillage = t.querySelectorAll('tbody tr a[href*="village="]').length;
-                if (rowsWithVillage > bestRowCount) {
-                    bestRowCount = rowsWithVillage;
-                    bestTable = t;
+        function aggregateRowsByVillageB(rows) {
+            // Se a tabela tem múltiplas linhas pra mesma vila (em casa / em comando /
+            // em apoio), soma tudo num único registro por vila.
+            const byId = {};
+            rows.forEach(r => {
+                if (!byId[r.villageId]) {
+                    byId[r.villageId] = { villageId: r.villageId, name: r.name, units: {} };
+                }
+                for (const [u, n] of Object.entries(r.units)) {
+                    byId[r.villageId].units[u] = (byId[r.villageId].units[u] || 0) + n;
                 }
             });
-            if (!bestTable) return result;
+            return Object.values(byId);
+        }
 
-            // Identificar unidades pelo header (procura class unit-item-NAME)
-            const headerCells = bestTable.querySelectorAll('thead th, thead td, tr:first-child th, tr:first-child td');
-            const unitTypes = [];
-            headerCells.forEach(th => {
+        function detectUnitsFromHeaderB(table) {
+            // Procura unidades em várias estratégias e na ORDEM em que aparecem nas colunas.
+            // Retorna array [unitId | null]  — null pra colunas que não são unidade.
+            const headerRow = table.querySelector('thead tr') || table.querySelector('tr');
+            if (!headerRow) return [];
+            const cells = headerRow.querySelectorAll('th, td');
+            const units = [];
+            cells.forEach(th => {
                 const html = th.innerHTML || '';
-                const m = html.match(/unit-item-([a-z]+)/i) || html.match(/unit_image\s+([a-z]+)/i);
-                if (m) {
-                    if (!unitTypes.includes(m[1])) unitTypes.push(m[1]);
-                } else {
-                    // fallback: alt do <img>
-                    const img = th.querySelector('img[src*=".png"], img[alt]');
-                    if (img) {
-                        const src = img.getAttribute('src') || '';
-                        const alt = img.getAttribute('alt') || '';
-                        const m2 = src.match(/unit_([a-z]+)\.png/i) || alt.match(/^([a-z]+)$/i);
-                        if (m2 && !unitTypes.includes(m2[1])) unitTypes.push(m2[1].toLowerCase());
+                // 1. class unit-item-NAME
+                let m = html.match(/unit-item-([a-z]+)/i);
+                if (m) { units.push(m[1].toLowerCase()); return; }
+                // 2. unit_image NAME
+                m = html.match(/unit_image\s+([a-z]+)/i) || html.match(/class=["'][^"']*\b([a-z]+)\s+unit[^"']*["']/i);
+                if (m) { units.push(m[1].toLowerCase()); return; }
+                // 3. img src=unit_NAME.png
+                const img = th.querySelector('img');
+                if (img) {
+                    const src = img.getAttribute('src') || '';
+                    const alt = (img.getAttribute('alt') || '').toLowerCase();
+                    const title = (img.getAttribute('title') || '').toLowerCase();
+                    let m2 = src.match(/unit_([a-z]+)\.png/i);
+                    if (m2) { units.push(m2[1].toLowerCase()); return; }
+                    // 4. alt PT-BR
+                    for (const [name, id] of Object.entries(UNIT_NAME_TO_ID)) {
+                        if (alt === name || title === name || alt.includes(name) || title.includes(name)) {
+                            units.push(id); return;
+                        }
                     }
                 }
+                // 5. texto da célula em PT-BR
+                const txt = (th.textContent || '').toLowerCase().trim();
+                for (const [name, id] of Object.entries(UNIT_NAME_TO_ID)) {
+                    if (txt === name || txt.startsWith(name)) { units.push(id); return; }
+                }
+                // Não é coluna de unidade
+                units.push(null);
             });
-            result.unitTypes = unitTypes;
+            return units;
+        }
 
-            // Pra cada row do tbody, extrai villageId + array de números por coluna
-            const dataRows = bestTable.querySelectorAll('tbody tr');
+        function parseTroopsTableB(doc) {
+            const result = { rows: [], unitTypes: [], totals: {} };
+            // Procura tabela específica primeiro
+            let table = doc.querySelector('#units_table, table.vis.units_table');
+            if (!table) {
+                // Fallback: maior tabela com link village= no tbody
+                let best = null, bestCount = 0;
+                doc.querySelectorAll('table').forEach(t => {
+                    const c = t.querySelectorAll('tbody tr a[href*="village="]').length;
+                    if (c > bestCount) { bestCount = c; best = t; }
+                });
+                table = best;
+            }
+            if (!table) return result;
+
+            // Detecta colunas pelo header
+            const columnUnits = detectUnitsFromHeaderB(table);
+            const validUnits = columnUnits.filter(u => u != null);
+            result.unitTypes = [...new Set(validUnits)];
+
+            if (validUnits.length === 0) {
+                logB('parseTroopsTable: nenhum header de unidade detectado — verifique window.TW_BUILD_TROOPS_RAW_HTML');
+                return result;
+            }
+
+            // Pra cada row do tbody, extrai villageId + valores das colunas que correspondem a unidades
+            const dataRows = table.querySelectorAll('tbody tr');
             dataRows.forEach(row => {
                 const link = row.querySelector('a[href*="village="]');
                 if (!link) return;
@@ -1583,28 +1651,21 @@ console.log('[TW-FARM] stub carregado v0.8.0 — injetando main world script');
                 let name = (link.textContent || '').trim();
                 const parenIdx = name.indexOf('(');
                 if (parenIdx > 0) name = name.slice(0, parenIdx).trim();
+                name = name.slice(0, 30);
+
                 const cells = row.querySelectorAll('td');
                 const units = {};
-                // As colunas numéricas vêm DEPOIS da coluna com link da vila
-                let foundLinkCol = false;
-                let unitColIdx = 0;
-                cells.forEach((td) => {
-                    if (!foundLinkCol) {
-                        if (td.contains(link)) foundLinkCol = true;
-                        return;
-                    }
+                // Mapeia coluna -> unit usando o índice do header
+                cells.forEach((td, idx) => {
+                    const unit = columnUnits[idx];
+                    if (!unit) return;
                     const txt = (td.textContent || '').replace(/[^\d]/g, '');
                     const n = parseInt(txt, 10);
-                    if (Number.isFinite(n)) {
-                        const unit = unitTypes[unitColIdx];
-                        if (unit) units[unit] = n;
-                        unitColIdx++;
+                    if (Number.isFinite(n) && n >= 0) {
+                        units[unit] = (units[unit] || 0) + n;
                     }
                 });
-                result.rows.push({ villageId, name: name.slice(0, 30), units });
-                for (const [u, n] of Object.entries(units)) {
-                    result.totals[u] = (result.totals[u] || 0) + n;
-                }
+                result.rows.push({ villageId, name, units });
             });
             return result;
         }
@@ -2569,7 +2630,7 @@ console.log('[TW-FARM] stub carregado v0.8.0 — injetando main world script');
   </div>
 
   <div style="background:#3d0a0a;color:#fff;border:2px solid #7a1f1f;padding:6px;margin-bottom:6px;border-radius:2px;">
-    <div style="font-weight:bold;margin-bottom:4px;">🎯 Conquistar Jogador (v0.8.0)</div>
+    <div style="font-weight:bold;margin-bottom:4px;">🎯 Conquistar Jogador (v0.8.1)</div>
     <div style="display:flex;gap:4px;">
       <button id="tw-atk-plan" style="flex:2;background:#a02020;color:white;border:none;padding:6px;cursor:pointer;font-weight:bold;border-radius:2px;font-size:11px;">📋 Planejar Ataque</button>
       <button id="tw-atk-stop" style="flex:1;background:#444;color:white;border:none;padding:6px;cursor:pointer;font-weight:bold;border-radius:2px;font-size:11px;">🛑 STOP</button>
