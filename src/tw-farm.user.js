@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TW Farm + Build + Recruit — ThCarmo
 // @namespace    https://github.com/ThCarmo/tribal-wars-userscript
-// @version      0.5.1
+// @version      0.5.2
 // @description  Farm (2L+1S, raio configurável) + Build Queue (multi-vila) + Recruit + Incoming Tagger
 // @author       Thiago Carmo
 // @match        *://*.tribalwars.com.br/*
@@ -17,7 +17,7 @@
 // Tampermonkey 5.5 stable ignora @inject-into page. Workaround clássico:
 // criar um <script> tag com o código real, anexar ao DOM, o browser executa
 // no MAIN WORLD (mesmo contexto que o DevTools console). Funciona em qualquer TM.
-console.log('[TW-FARM] stub carregado v0.5.1 — injetando main world script');
+console.log('[TW-FARM] stub carregado v0.5.2 — injetando main world script');
 (function injectMainWorldScript() {
     function mainWorldScript() {
         'use strict';
@@ -32,7 +32,7 @@ console.log('[TW-FARM] stub carregado v0.5.1 — injetando main world script');
             const b = document.createElement('div');
             b.id = 'tw-farm-banner-prova';
             b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#d40000;color:#fff;padding:12px;font:bold 14px Arial;text-align:center;border-bottom:3px solid #000;box-shadow:0 2px 10px rgba(0,0,0,0.6);';
-            b.innerHTML = `✅ TW Farm + Build + Research + Recruit v0.5.1 ATIVO — painéis: Farm à direita, Build/Research à esquerda <span style="margin-left:20px;cursor:pointer;text-decoration:underline;" id="tw-farm-banner-close">[fechar]</span>`;
+            b.innerHTML = `✅ TW Farm + Build + Research + Recruit v0.5.2 ATIVO — painéis: Farm à direita, Build/Research à esquerda <span style="margin-left:20px;cursor:pointer;text-decoration:underline;" id="tw-farm-banner-close">[fechar]</span>`;
             (document.body || document.documentElement).insertAdjacentElement('afterbegin', b);
             document.getElementById('tw-farm-banner-close').onclick = () => b.remove();
         };
@@ -41,7 +41,7 @@ console.log('[TW-FARM] stub carregado v0.5.1 — injetando main world script');
         } else {
             document.addEventListener('DOMContentLoaded', showBanner);
         }
-        console.log('[TW-FARM] v0.5.1 carregado (script-tag bridge, main world) em', location.href);
+        console.log('[TW-FARM] v0.5.2 carregado (script-tag bridge, main world) em', location.href);
     } catch (e) {
         console.error('[TW-FARM] banner-prova falhou:', e);
     }
@@ -1123,34 +1123,56 @@ console.log('[TW-FARM] stub carregado v0.5.1 — injetando main world script');
         async function fetchVillagesFromOverviewB() {
             // Página overview_villages SEMPRE lista todas as vilas do jogador.
             // Usa essa fonte quando game_data trouxer só a vila ativa.
-            try {
-                const resp = await fetch('/game.php?screen=overview_villages&mode=combined', { credentials: 'same-origin' });
-                if (!resp.ok) return [];
-                const html = await resp.text();
-                const doc = new DOMParser().parseFromString(html, 'text/html');
-                const seen = new Set();
-                const villages = [];
-                // Cada linha tem um <a href="?village=ID&..."> e em alguma td "(X|Y)"
-                doc.querySelectorAll('table.vis tbody tr, #production_table tbody tr, #combined_table tbody tr').forEach(row => {
-                    const link = row.querySelector('a[href*="village="]');
-                    if (!link) return;
-                    const idMatch = link.href.match(/village=(\d+)/);
-                    if (!idMatch) return;
-                    const id = idMatch[1];
-                    if (seen.has(id)) return;
-                    const rowText = row.textContent || row.innerText || '';
-                    const coordMatch = rowText.match(/\((\d{1,4})\|(\d{1,4})\)/);
-                    const x = coordMatch ? parseInt(coordMatch[1], 10) : 0;
-                    const y = coordMatch ? parseInt(coordMatch[2], 10) : 0;
-                    const name = (link.textContent || `Vila ${id}`).trim().slice(0, 30);
-                    seen.add(id);
-                    villages.push({ id, name, x, y });
-                });
-                return villages;
-            } catch (e) {
-                logB('Fallback overview falhou:', e.message);
-                return [];
+            // Tenta múltiplas URLs porque modes variam entre mundos.
+            const urls = [
+                '/game.php?screen=overview_villages&mode=combined',
+                '/game.php?screen=overview_villages&mode=prod',
+                '/game.php?screen=overview_villages',
+            ];
+            for (const url of urls) {
+                try {
+                    const resp = await fetch(url, { credentials: 'same-origin' });
+                    if (!resp.ok) {
+                        logB(`overview ${url} retornou HTTP ${resp.status}`);
+                        continue;
+                    }
+                    const html = await resp.text();
+                    const doc = new DOMParser().parseFromString(html, 'text/html');
+
+                    const seen = new Set();
+                    const villages = [];
+
+                    // Estratégia ampla: catar TODA <a href*="village=NNN"> da página
+                    // que tenha coord em alguma <td> da mesma <tr>.
+                    const links = doc.querySelectorAll('a[href*="village="]');
+                    links.forEach(link => {
+                        const idMatch = link.getAttribute('href').match(/[?&]village=(\d+)/);
+                        if (!idMatch) return;
+                        const id = idMatch[1];
+                        if (seen.has(id)) return;
+                        // só pega links dentro de tabelas (evita menus/sidebar)
+                        const row = link.closest('tr');
+                        if (!row) return;
+                        const rowText = row.textContent || row.innerText || '';
+                        const coordMatch = rowText.match(/\((\d{1,4})\|(\d{1,4})\)/);
+                        if (!coordMatch) return;
+                        const x = parseInt(coordMatch[1], 10);
+                        const y = parseInt(coordMatch[2], 10);
+                        const name = (link.textContent || `Vila ${id}`).trim().slice(0, 30);
+                        seen.add(id);
+                        villages.push({ id, name, x, y });
+                    });
+
+                    if (villages.length > 0) {
+                        logB(`overview ${url} → ${villages.length} vilas`);
+                        return villages;
+                    }
+                    logB(`overview ${url} retornou 200 mas 0 vilas (DOM diferente?)`);
+                } catch (e) {
+                    logB(`overview ${url} crashou: ${e.message}`);
+                }
             }
+            return [];
         }
 
         async function getAllVillagesB(forceRefresh = false) {
@@ -1771,6 +1793,7 @@ console.log('[TW-FARM] stub carregado v0.5.1 — injetando main world script');
     <span title="% dos recursos disponíveis pra recrutar">Recrut %:</span>
     <input id="tw-bld-recpct" type="number" value="${Math.round(BCFG.recruitResourcePct*100)}" min="10" max="100" style="width:50px;font-size:10px;"/>
     <button id="tw-bld-refresh-villages" style="background:#1f4d7a;color:white;border:none;padding:2px 6px;cursor:pointer;font-size:10px;border-radius:2px;">⟳ Vilas</button>
+    <button id="tw-bld-diag" style="background:#a04000;color:white;border:none;padding:2px 6px;cursor:pointer;font-size:10px;border-radius:2px;" title="Diagnostico verbose no console F12">🔎 Diag</button>
   </div>
 
   <div style="font-weight:bold;color:#1f5d1f;margin:8px 0 3px;">🏗 Build Queue</div>
@@ -1832,6 +1855,36 @@ console.log('[TW-FARM] stub carregado v0.5.1 — injetando main world script');
                 const v = await getAllVillagesB(true);
                 logB(`Encontradas ${v.length} vilas`);
                 updateVillagesPanelB();
+            };
+            document.getElementById('tw-bld-diag').onclick = async () => {
+                console.log('%c═══ TW-BUILD DIAGNÓSTICO ═══', 'color:#a04000;font-size:14px;font-weight:bold');
+                const gd = getGameDataB();
+                console.log('1) game_data existe?', !!gd);
+                if (gd) {
+                    console.log('   game_data.world:', gd.world);
+                    console.log('   game_data.player.name:', gd.player?.name);
+                    console.log('   game_data.player.id:', gd.player?.id);
+                    console.log('   game_data.villages (array)?', Array.isArray(gd.villages), 'len:', gd.villages?.length);
+                    console.log('   game_data.player.villages?', typeof gd.player?.villages, 'len:',
+                        Array.isArray(gd.player?.villages) ? gd.player.villages.length :
+                        (gd.player?.villages ? Object.keys(gd.player.villages).length : 0));
+                    console.log('   game_data.village (ativa):', gd.village);
+                }
+                const fromGd = villagesFromGameDataB();
+                console.log('2) Extraídas de game_data:', fromGd.length, 'vilas');
+                console.table(fromGd.slice(0, 5));
+                console.log('3) Buscando overview_villages...');
+                const fromOverview = await fetchVillagesFromOverviewB();
+                console.log('   Overview retornou:', fromOverview.length, 'vilas');
+                console.table(fromOverview.slice(0, 5));
+                console.log('4) Cache atual (getAllVillagesSyncB):', getAllVillagesSyncB().length, 'vilas');
+                const final = await getAllVillagesB(true);
+                console.log('5) Final (force refresh):', final.length, 'vilas');
+                console.log('%c═══ FIM DIAGNÓSTICO — escolhida: ' + final.length + ' vilas ═══', 'color:#a04000;font-size:14px;font-weight:bold');
+                logB(`Diagnóstico: gd=${fromGd.length}, overview=${fromOverview.length}, final=${final.length}. Detalhes no console F12.`);
+                updateVillagesPanelB();
+                wB.TW_BUILD_LAST_DIAG = { gd: fromGd, overview: fromOverview, final };
+                alert(`Diagnóstico:\n\n- game_data: ${fromGd.length} vilas\n- overview_villages: ${fromOverview.length} vilas\n- usado: ${final.length} vilas\n\nDetalhes completos no console (F12).\nObjeto salvo em window.TW_BUILD_LAST_DIAG`);
             };
 
             document.getElementById('tw-bld-start').onclick = () => {
