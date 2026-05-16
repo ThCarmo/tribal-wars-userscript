@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TW Farm + Build + Recruit — ThCarmo
 // @namespace    https://github.com/ThCarmo/tribal-wars-userscript
-// @version      0.7.5
+// @version      0.7.6
 // @description  Farm (2L+1S, raio configurável) + Build Queue (multi-vila) + Recruit + Incoming Tagger
 // @author       Thiago Carmo
 // @match        *://*.tribalwars.com.br/*
@@ -17,7 +17,7 @@
 // Tampermonkey 5.5 stable ignora @inject-into page. Workaround clássico:
 // criar um <script> tag com o código real, anexar ao DOM, o browser executa
 // no MAIN WORLD (mesmo contexto que o DevTools console). Funciona em qualquer TM.
-console.log('[TW-FARM] stub carregado v0.7.5 — injetando main world script');
+console.log('[TW-FARM] stub carregado v0.7.6 — injetando main world script');
 (function injectMainWorldScript() {
     function mainWorldScript() {
         'use strict';
@@ -32,7 +32,7 @@ console.log('[TW-FARM] stub carregado v0.7.5 — injetando main world script');
             const b = document.createElement('div');
             b.id = 'tw-farm-banner-prova';
             b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#d40000;color:#fff;padding:12px;font:bold 14px Arial;text-align:center;border-bottom:3px solid #000;box-shadow:0 2px 10px rgba(0,0,0,0.6);';
-            b.innerHTML = `✅ TW Farm + Build + Research + Recruit v0.7.5 ATIVO — painéis: Farm à direita, Build/Research à esquerda <span style="margin-left:20px;cursor:pointer;text-decoration:underline;" id="tw-farm-banner-close">[fechar]</span>`;
+            b.innerHTML = `✅ TW Farm + Build + Research + Recruit v0.7.6 ATIVO — painéis: Farm à direita, Build/Research à esquerda <span style="margin-left:20px;cursor:pointer;text-decoration:underline;" id="tw-farm-banner-close">[fechar]</span>`;
             (document.body || document.documentElement).insertAdjacentElement('afterbegin', b);
             document.getElementById('tw-farm-banner-close').onclick = () => b.remove();
         };
@@ -41,7 +41,7 @@ console.log('[TW-FARM] stub carregado v0.7.5 — injetando main world script');
         } else {
             document.addEventListener('DOMContentLoaded', showBanner);
         }
-        console.log('[TW-FARM] v0.7.5 carregado (script-tag bridge, main world) em', location.href);
+        console.log('[TW-FARM] v0.7.6 carregado (script-tag bridge, main world) em', location.href);
     } catch (e) {
         console.error('[TW-FARM] banner-prova falhou:', e);
     }
@@ -1026,8 +1026,8 @@ console.log('[TW-FARM] stub carregado v0.7.5 — injetando main world script');
             researchAttempts: 5,
             coinsPerCycle: 1,
             maxNobles: 50,
-            // === Especialização de vilas (v0.7.5: TODAS uniform) ===
-            // Default v0.7.5: 200 (> 100) = todas as vilas são NOBLE (template
+            // === Especialização de vilas (v0.7.6: TODAS uniform) ===
+            // Default v0.7.6: 200 (> 100) = todas as vilas são NOBLE (template
             // universal, cunham moedas + treinam nobre + recrutam heavy).
             // Pra voltar à especialização (poucas vilas NOBLE, resto OFF heavy
             // puro), diminuir esse número no painel.
@@ -1042,7 +1042,7 @@ console.log('[TW-FARM] stub carregado v0.7.5 — injetando main world script');
         //         Escolta mínima de heavy + spy.
 
         // ============ TEMPLATE UNIVERSAL ============
-        // Decisão do user (v0.7.5): todas as vilas fazem tudo. So precisa de:
+        // Decisão do user (v0.7.6): todas as vilas fazem tudo. So precisa de:
         //   recursos + farm + storage + smith + stable + market + academia
         // NAO constroi: barracks (sem lança/espada/axe), garage (sem
         // ariete/cat), hide (sem esconder recurso de quem ataca), wall
@@ -1050,32 +1050,49 @@ console.log('[TW-FARM] stub carregado v0.7.5 — injetando main world script');
         // Academia (snob) maxima nivel 1 nesse mundo — academia + cunhagem
         // + treino de nobre rolam em TODAS as vilas.
 
+        // Template ESTRITO (v0.7.6): só smith 20 + snob 1 + pré-reqs essenciais.
+        // Após completar, vila para de construir (template concluído ✓).
+        // Loops de coin/snob/recruit continuam rodando normalmente.
+        //
+        // ⚠️ NÃO inclui stable. Se vila não tiver estábulo construído antes, o
+        // recruit de heavy vai falhar silencioso. Pra incluir, adicionar
+        // ['stable', 10] após smith 5.
+        //
+        // Pré-requisitos cobertos:
+        // - smith 1 precisa: main 5 + barracks 1
+        // - snob 1 precisa: main 20 + market 10 + smith 20
         const TEMPLATE_UNIVERSAL = [
-            // Base inicial
-            ['main', 3], ['wood', 5], ['stone', 5], ['iron', 5],
+            // Base
+            ['main', 3],
+            ['wood', 5], ['stone', 5], ['iron', 5],
             ['farm', 3], ['storage', 3],
-            // Habilitar pesquisa: smith 1 + stable 1
-            ['main', 5], ['wood', 10], ['stone', 10], ['iron', 10],
-            ['farm', 7], ['storage', 5], ['smith', 1], ['stable', 1],
-            // Mid game: smith 5 + market (pré-req da academia)
-            ['main', 10], ['market', 1], ['market', 5],
+            ['main', 5],
+            // Habilitar ferreiro (precisa barracks 1)
+            ['barracks', 1],
+            ['smith', 1],
+            // Recursos médios pra suportar próximos prédios
+            ['wood', 10], ['stone', 10], ['iron', 10],
+            ['farm', 5], ['storage', 5],
+            ['main', 10],
+            ['smith', 5],
+            // Market (pré-req da academia)
+            ['market', 1], ['market', 5],
             ['wood', 15], ['stone', 15], ['iron', 15],
-            ['farm', 15], ['storage', 10], ['smith', 5],
-            // Academia: pré-req = main 20 + market 10 + smith 5
-            ['market', 10], ['main', 15], ['main', 20],
-            ['snob', 1],   // academia única (max neste mundo)
-            // Stable + smith médios pra heavy lvl 2
-            ['stable', 5], ['smith', 10], ['stable', 10],
+            ['farm', 10], ['storage', 10],
+            ['market', 10],
+            // Main 20 (pré-req da academia)
+            ['main', 15], ['main', 20],
+            ['smith', 10],
+            // Recursos altos pra ferreiro 15/20 (custo alto)
             ['wood', 20], ['stone', 20], ['iron', 20],
-            ['farm', 20], ['storage', 15],
-            // Heavy max research
-            ['smith', 15], ['stable', 15],
-            ['smith', 20], ['stable', 20],
-            // Recursos max pra cunhar moedas indefinidamente
+            ['farm', 15], ['storage', 15],
+            ['smith', 15],
             ['wood', 25], ['stone', 25], ['iron', 25],
-            ['farm', 25], ['storage', 20],
-            ['wood', 30], ['stone', 30], ['iron', 30],
-            ['farm', 30], ['storage', 30],
+            ['farm', 20], ['storage', 25],   // storage 25 = 100k cap (ferreiro 20 custa ~100k+)
+            // META FINAL
+            ['smith', 20],
+            ['snob', 1],
+            // FIM — não constrói mais nada. Coin + Snob + Recruit continuam.
         ];
 
         // Mix universal: HEAVY PURO. Não desperdiça pop com nada mais.
@@ -1110,15 +1127,15 @@ console.log('[TW-FARM] stub carregado v0.7.5 — injetando main world script');
             try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
         };
 
-        // Migration v0.7.5: nobleCount mudou de default 5 → 200 (todas viram NOBLE).
+        // Migration v0.7.6: nobleCount mudou de default 5 → 200 (todas viram NOBLE).
         // Se o user tem valor antigo salvo (era 5 ou menor) E nunca passou pela
-        // v0.7.5, reseta pro novo default. Se mexeu manualmente pra >5, respeita.
+        // v0.7.6, reseta pro novo default. Se mexeu manualmente pra >5, respeita.
         const LS_VERSION_KEY = 'twBuildLastSeenVersion';
         const seenVersion = lsGetB(LS_VERSION_KEY, null);
         if (seenVersion !== '0.7.4') {
             const oldCount = lsGetB(LS_NOBLE_COUNT, null);
             if (oldCount === null || oldCount <= 5) {
-                // Reseta pro novo default da v0.7.5
+                // Reseta pro novo default da v0.7.6
                 localStorage.removeItem(LS_NOBLE_COUNT);
             }
             lsSetB(LS_VERSION_KEY, '0.7.4');
@@ -1137,7 +1154,7 @@ console.log('[TW-FARM] stub carregado v0.7.5 — injetando main world script');
             cycleCount: 0,
             lastCycleAt: null,
             log: [],
-            // === Especialização por role (v0.7.5) ===
+            // === Especialização por role (v0.7.6) ===
             templates: {
                 OFF:   customTpl.OFF   || TEMPLATE_OFF,
                 NOBLE: customTpl.NOBLE || TEMPLATE_NOBLE,
