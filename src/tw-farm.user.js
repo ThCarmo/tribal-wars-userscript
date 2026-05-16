@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TW Farm + Build + Recruit — ThCarmo
 // @namespace    https://github.com/ThCarmo/tribal-wars-userscript
-// @version      0.7.1
+// @version      0.7.2
 // @description  Farm (2L+1S, raio configurável) + Build Queue (multi-vila) + Recruit + Incoming Tagger
 // @author       Thiago Carmo
 // @match        *://*.tribalwars.com.br/*
@@ -17,7 +17,7 @@
 // Tampermonkey 5.5 stable ignora @inject-into page. Workaround clássico:
 // criar um <script> tag com o código real, anexar ao DOM, o browser executa
 // no MAIN WORLD (mesmo contexto que o DevTools console). Funciona em qualquer TM.
-console.log('[TW-FARM] stub carregado v0.7.1 — injetando main world script');
+console.log('[TW-FARM] stub carregado v0.7.2 — injetando main world script');
 (function injectMainWorldScript() {
     function mainWorldScript() {
         'use strict';
@@ -32,7 +32,7 @@ console.log('[TW-FARM] stub carregado v0.7.1 — injetando main world script');
             const b = document.createElement('div');
             b.id = 'tw-farm-banner-prova';
             b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#d40000;color:#fff;padding:12px;font:bold 14px Arial;text-align:center;border-bottom:3px solid #000;box-shadow:0 2px 10px rgba(0,0,0,0.6);';
-            b.innerHTML = `✅ TW Farm + Build + Research + Recruit v0.7.1 ATIVO — painéis: Farm à direita, Build/Research à esquerda <span style="margin-left:20px;cursor:pointer;text-decoration:underline;" id="tw-farm-banner-close">[fechar]</span>`;
+            b.innerHTML = `✅ TW Farm + Build + Research + Recruit v0.7.2 ATIVO — painéis: Farm à direita, Build/Research à esquerda <span style="margin-left:20px;cursor:pointer;text-decoration:underline;" id="tw-farm-banner-close">[fechar]</span>`;
             (document.body || document.documentElement).insertAdjacentElement('afterbegin', b);
             document.getElementById('tw-farm-banner-close').onclick = () => b.remove();
         };
@@ -41,7 +41,7 @@ console.log('[TW-FARM] stub carregado v0.7.1 — injetando main world script');
         } else {
             document.addEventListener('DOMContentLoaded', showBanner);
         }
-        console.log('[TW-FARM] v0.7.1 carregado (script-tag bridge, main world) em', location.href);
+        console.log('[TW-FARM] v0.7.2 carregado (script-tag bridge, main world) em', location.href);
     } catch (e) {
         console.error('[TW-FARM] banner-prova falhou:', e);
     }
@@ -1026,7 +1026,7 @@ console.log('[TW-FARM] stub carregado v0.7.1 — injetando main world script');
             researchAttempts: 5,
             coinsPerCycle: 1,
             maxNobles: 50,
-            // === Especialização de vilas (v0.7.1) ===
+            // === Especialização de vilas (v0.7.2) ===
             // Quantas vilas serão NOBLE (geradoras de nobres). Resto = OFF (full heavy).
             // Default: primeiras N da lista. Pode override manual no painel via ✎ Roles.
             nobleVillageCount: 5,
@@ -1074,15 +1074,17 @@ console.log('[TW-FARM] stub carregado v0.7.1 — injetando main world script');
             ['main', 5], ['wood', 10], ['stone', 10], ['iron', 10],
             ['farm', 7], ['storage', 5],
             ['smith', 1], ['market', 1], ['stable', 1],
-            // Academia o quanto antes (academia limitada a nível 1 neste mundo)
+            // Pré-requisitos da academia: main 20, market 10, smith 5
             ['main', 10], ['market', 5],
             ['wood', 15], ['stone', 15], ['iron', 15],
             ['farm', 15], ['storage', 10],
-            ['main', 15], ['market', 10], ['snob', 1],   // academia única
+            ['main', 15], ['market', 10], ['smith', 5],   // <-- smith 5 ANTES do snob 1
+            ['main', 20],
+            ['snob', 1],                                   // academia única (lvl 1 max neste mundo)
             // Escalando recursos pra cunhar moedas em massa
             ['wood', 20], ['stone', 20], ['iron', 20],
             ['farm', 20], ['storage', 20],
-            ['market', 15], ['smith', 5], ['stable', 5],
+            ['market', 15], ['stable', 5],
             ['wood', 25], ['stone', 25], ['iron', 25],
             ['farm', 25], ['storage', 25],
             ['market', 20], ['smith', 10], ['stable', 10],
@@ -1139,7 +1141,7 @@ console.log('[TW-FARM] stub carregado v0.7.1 — injetando main world script');
             cycleCount: 0,
             lastCycleAt: null,
             log: [],
-            // === Especialização por role (v0.7.1) ===
+            // === Especialização por role (v0.7.2) ===
             templates: {
                 OFF:   customTpl.OFF   || TEMPLATE_OFF,
                 NOBLE: customTpl.NOBLE || TEMPLATE_NOBLE,
@@ -1230,7 +1232,11 @@ console.log('[TW-FARM] stub carregado v0.7.1 — injetando main world script');
                         if (!coordMatch) return;
                         const x = parseInt(coordMatch[1], 10);
                         const y = parseInt(coordMatch[2], 10);
-                        const name = (link.textContent || `Vila ${id}`).trim().slice(0, 30);
+                        // Limpa nome: tira coord do final ("Aldeia X (123|456)" → "Aldeia X")
+                        let name = (link.textContent || `Vila ${id}`).trim();
+                        const parenIdx = name.indexOf('(');
+                        if (parenIdx > 0) name = name.slice(0, parenIdx).trim();
+                        name = name.slice(0, 30);
                         seen.add(id);
                         villages.push({ id, name, x, y });
                     });
@@ -1398,7 +1404,7 @@ console.log('[TW-FARM] stub carregado v0.7.1 — injetando main world script');
             return queue;
         }
 
-        function pickNextBuildB(template, current, queue) {
+        function pickNextBuildB(template, current, queue, skipKeys = []) {
             const effective = { ...current };
             for (const q of queue) {
                 if (!effective[q.building] || effective[q.building] < q.targetLevel) {
@@ -1408,6 +1414,8 @@ console.log('[TW-FARM] stub carregado v0.7.1 — injetando main world script');
             for (const [building, target] of template) {
                 const cur = effective[building] || 0;
                 if (cur < target) {
+                    const key = `${building}:${cur + 1}`;
+                    if (skipKeys.includes(key)) continue;  // já tentou e falhou nesta passada
                     return { building, fromLevel: cur, toLevel: cur + 1 };
                 }
             }
@@ -1497,10 +1505,16 @@ console.log('[TW-FARM] stub carregado v0.7.1 — injetando main world script');
 
             const role = getVillageRoleB(village.id);
             const template = getTemplateForRoleB(role);
+            // Skip list: prédios que o servidor recusou nesta passada por pré-req faltante
+            // ou "totalmente construído". Faz pickNextBuild pular pro próximo do template.
+            const skipKeys = [];
+            // Guard: máx 10 tentativas no for (pra não infinite loop se template todo recusa)
+            let attempts = 0;
             for (let slot = 0; slot < slotsAvailable; slot++) {
-                const next = pickNextBuildB(template, current, simulatedQueue);
+                if (++attempts > slotsAvailable + 10) break;
+                const next = pickNextBuildB(template, current, simulatedQueue, skipKeys);
                 if (!next) {
-                    if (enqueuedThisPass.length === 0) {
+                    if (enqueuedThisPass.length === 0 && skipKeys.length === 0) {
                         status.status = 'template concluído ✓';
                         logB(`Vila ${village.name}: template concluído`);
                     }
@@ -1511,17 +1525,20 @@ console.log('[TW-FARM] stub carregado v0.7.1 — injetando main world script');
                 const res = await enqueueBuildB(village.id, next.building, csrf);
                 if (res.ok) {
                     enqueuedThisPass.push(`${next.building}→${next.toLevel}`);
-                    // Simula que o prédio foi adicionado na fila pra o próximo pickNext
-                    // escolher o seguinte (não repete o mesmo).
                     simulatedQueue.push({ building: next.building, targetLevel: next.toLevel });
-                    // Pausa curta entre múltiplos enqueues na MESMA vila (já autenticado)
-                    if (slot < slotsAvailable - 1) {
-                        await sleepB(jitterB([500, 1500]));
-                    }
+                    if (slot < slotsAvailable - 1) await sleepB(jitterB([500, 1500]));
                 } else {
-                    errorsThisPass.push(`${next.building}:${res.error}`);
-                    // Tipicamente "recursos insuficientes" — para de tentar nessa vila,
-                    // mas mantém o que já enfileirou. Próximo ciclo tenta de novo.
+                    const err = res.error || '';
+                    // Erros "recuperáveis" (pré-req faltando, já no max, indisponível):
+                    // pula esse item do template e tenta o próximo. Não consome slot.
+                    if (/poss[íi]vel|totalmente|prerequisit|nivel.+m[aá]ximo|n[íi]vel.+m[aá]ximo|construct.+max/i.test(err)) {
+                        skipKeys.push(`${next.building}:${next.toLevel}`);
+                        slot--; // re-tenta o mesmo slot com próximo do template
+                        // Não loga cada skip (verbose demais com 100 vilas)
+                        continue;
+                    }
+                    // Outros erros (sem recursos, captcha): para de tentar nessa vila
+                    errorsThisPass.push(`${next.building}:${err}`);
                     break;
                 }
             }
@@ -1725,7 +1742,7 @@ console.log('[TW-FARM] stub carregado v0.7.1 — injetando main world script');
         }
 
         async function recruitLoopB() {
-            logB(`Recruit loop iniciado. Mix=${JSON.stringify(BSTATE.troopMix)}`);
+            logB(`Recruit loop iniciado. Mix OFF=${JSON.stringify(BSTATE.mixes.OFF)} | NOBLE=${JSON.stringify(BSTATE.mixes.NOBLE)}`);
             while (BSTATE.recruitRunning) {
                 const villages = await getAllVillagesB();
                 if (villages.length === 0) {
