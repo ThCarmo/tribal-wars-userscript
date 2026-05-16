@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TW Farm + Build + Recruit — ThCarmo
 // @namespace    https://github.com/ThCarmo/tribal-wars-userscript
-// @version      0.7.2
+// @version      0.7.3
 // @description  Farm (2L+1S, raio configurável) + Build Queue (multi-vila) + Recruit + Incoming Tagger
 // @author       Thiago Carmo
 // @match        *://*.tribalwars.com.br/*
@@ -17,7 +17,7 @@
 // Tampermonkey 5.5 stable ignora @inject-into page. Workaround clássico:
 // criar um <script> tag com o código real, anexar ao DOM, o browser executa
 // no MAIN WORLD (mesmo contexto que o DevTools console). Funciona em qualquer TM.
-console.log('[TW-FARM] stub carregado v0.7.2 — injetando main world script');
+console.log('[TW-FARM] stub carregado v0.7.3 — injetando main world script');
 (function injectMainWorldScript() {
     function mainWorldScript() {
         'use strict';
@@ -32,7 +32,7 @@ console.log('[TW-FARM] stub carregado v0.7.2 — injetando main world script');
             const b = document.createElement('div');
             b.id = 'tw-farm-banner-prova';
             b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#d40000;color:#fff;padding:12px;font:bold 14px Arial;text-align:center;border-bottom:3px solid #000;box-shadow:0 2px 10px rgba(0,0,0,0.6);';
-            b.innerHTML = `✅ TW Farm + Build + Research + Recruit v0.7.2 ATIVO — painéis: Farm à direita, Build/Research à esquerda <span style="margin-left:20px;cursor:pointer;text-decoration:underline;" id="tw-farm-banner-close">[fechar]</span>`;
+            b.innerHTML = `✅ TW Farm + Build + Research + Recruit v0.7.3 ATIVO — painéis: Farm à direita, Build/Research à esquerda <span style="margin-left:20px;cursor:pointer;text-decoration:underline;" id="tw-farm-banner-close">[fechar]</span>`;
             (document.body || document.documentElement).insertAdjacentElement('afterbegin', b);
             document.getElementById('tw-farm-banner-close').onclick = () => b.remove();
         };
@@ -41,7 +41,7 @@ console.log('[TW-FARM] stub carregado v0.7.2 — injetando main world script');
         } else {
             document.addEventListener('DOMContentLoaded', showBanner);
         }
-        console.log('[TW-FARM] v0.7.2 carregado (script-tag bridge, main world) em', location.href);
+        console.log('[TW-FARM] v0.7.3 carregado (script-tag bridge, main world) em', location.href);
     } catch (e) {
         console.error('[TW-FARM] banner-prova falhou:', e);
     }
@@ -1026,7 +1026,7 @@ console.log('[TW-FARM] stub carregado v0.7.2 — injetando main world script');
             researchAttempts: 5,
             coinsPerCycle: 1,
             maxNobles: 50,
-            // === Especialização de vilas (v0.7.2) ===
+            // === Especialização de vilas (v0.7.3) ===
             // Quantas vilas serão NOBLE (geradoras de nobres). Resto = OFF (full heavy).
             // Default: primeiras N da lista. Pode override manual no painel via ✎ Roles.
             nobleVillageCount: 5,
@@ -1141,7 +1141,7 @@ console.log('[TW-FARM] stub carregado v0.7.2 — injetando main world script');
             cycleCount: 0,
             lastCycleAt: null,
             log: [],
-            // === Especialização por role (v0.7.2) ===
+            // === Especialização por role (v0.7.3) ===
             templates: {
                 OFF:   customTpl.OFF   || TEMPLATE_OFF,
                 NOBLE: customTpl.NOBLE || TEMPLATE_NOBLE,
@@ -1731,7 +1731,10 @@ console.log('[TW-FARM] stub carregado v0.7.2 — injetando main world script');
                     summary.push(`${screen}[${parts}]`);
                     logB(`Vila ${village.name} ${screen}: ${parts}`);
                 } else if (!res.ok) {
-                    logB(`Vila ${village.name} ${screen} falhou: ${res.error}`);
+                    // Silencia erros esperados em mundo speed (prédio ainda não construído)
+                    if (!/sem form|n[ãa]o constru|sem custos/i.test(res.error || '')) {
+                        logB(`Vila ${village.name} ${screen} falhou: ${res.error}`);
+                    }
                 }
                 await sleepB(jitterB());
             }
@@ -1993,7 +1996,6 @@ console.log('[TW-FARM] stub carregado v0.7.2 — injetando main world script');
 
         async function processVillageCoinB(village) {
             const status = ensureStatusB(village);
-            // Cunhagem só em vilas NOBLE (desperdício em OFF que nem tem academia)
             if (getVillageRoleB(village.id) !== 'NOBLE') {
                 status.lastCoin = 'skip (não-NOBLE)';
                 return;
@@ -2002,8 +2004,13 @@ console.log('[TW-FARM] stub carregado v0.7.2 — injetando main world script');
             if (res.ok) {
                 status.lastCoin = `+${res.mintedRequested} (${nowStrB()})`;
                 logB(`Vila ${village.name}: cunhou ${res.mintedRequested} moeda(s) (tinha ${res.coinsBefore ?? '?'})`);
-            } else if (!/academia n[ãa]o constru/i.test(res.error || '')) {
-                logB(`Vila ${village.name} coin: ${res.error}`);
+            } else {
+                const err = (res.error || '').trim() || 'erro vazio do servidor';
+                status.lastCoin = `falhou: ${err.slice(0, 30)}`;
+                // Silencia erros esperados: academia não construída ainda OU sem recursos
+                if (!/academia n[ãa]o constru|sem form|n[ãa]o.+suficiente|recursos/i.test(err)) {
+                    logB(`Vila ${village.name} coin: ${err}`);
+                }
             }
             updateVillagesPanelB();
         }
@@ -2096,7 +2103,9 @@ console.log('[TW-FARM] stub carregado v0.7.2 — injetando main world script');
                 status.lastSnob = `treinou nobre (${nowStrB()})`;
                 logB(`Vila ${village.name}: NOBRE treinado ⚜`);
             } else if (!res.ok) {
-                logB(`Vila ${village.name} snob: ${res.error}`);
+                if (!/sem form|n[ãa]o constru/i.test(res.error || '')) {
+                    logB(`Vila ${village.name} snob: ${res.error}`);
+                }
             }
             updateVillagesPanelB();
         }
