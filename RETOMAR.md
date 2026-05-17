@@ -1,100 +1,119 @@
 # RETOMAR — Tribal Wars Userscript
 
-> Checkpoint pra próxima sessão. Última atualização: **2026-05-16, fim do dia**.
+> Checkpoint pra próxima sessão. Última atualização: **2026-05-17, sessão v0.9.0**.
 
 ## Status atual
 
-- **tw-farm.user.js v0.8.1** ✅ Farm BR142 OPERACIONAL desde 14/05 + 🆕 Build/Research/Coin/Snob/Recruit/Ataques em mundo speed brs1.
-- Player: **THCARMO**, **100 vilas** em brs1.tribalwars.com.br
-- Vila ativa de teste: Aldeia 10 (494|462) — já bateu "template concluído ✓" + heavy:200 + spy:200 confirmado em log
+- **tw-farm.user.js v0.9.0** ✅ Refator grande — **modo BR142** ativo (mundo speed `brs1` encerrado).
+- Painel unificado **arrastável** (header com cursor:move, salva posição em localStorage) + botão minimizar.
+- Farm em conformidade com nova regra do mundo: **21 CL + 1 Spy** (≥81 pop).
+- Priorização de alvos via **Loot Assistant nativo** (🟢 cheias → 🟡 parciais → ⚪ desconhecidas; 🔴 vazias puladas).
+- Build SÓ recursos (wood/stone/iron 1→30, intercalado por nível). Sem warehouse/farm/smith — sobe quando há recursos.
+- Todos os módulos brs1 (recruit/research/coin/snob/ataques) PRESERVADOS no código mas DESATIVADOS via guard `WORLD_MODE !== 'speed'`. Pra reativar: trocar 1 linha `const WORLD_MODE = 'br142'` no topo.
 
 ## Arquivo único
 
-`src/tw-farm.user.js` (~135KB). Banner vermelho no topo confirma "v0.8.1 ATIVO". Dois painéis no jogo:
-- **Direita (laranja)**: Farm + Tagger (BR142)
-- **Esquerda (verde)**: Build/Research/Coin/Snob/Recruit + Atacar Jogador (brs1)
+`src/tw-farm.user.js`. Banner vermelho confirma "v0.9.0 ATIVO — modo: BR142".
 
-## Sessão de 16/05/2026
+- **Painel laranja (direita por default, mas arrastável)**: Farm + Map Scan + Build Recursos + Tagger
+- **Painel verde (esquerda)**: NÃO injetado em modo br142
 
-Passamos por **18 versões** (v0.4.0 → v0.8.1) numa sessão. Mudanças principais:
+## Mudanças v0.9.0 (em ordem)
 
-### Build + Recruit (v0.4 → v0.5.3)
-- Detecção de 100 vilas via fallback `/game.php?screen=overview_villages&mode=combined` (game_data trouxe só 3)
-- Fila inteligente: enche os 2 slots por vila por passada (era 1, ele precisava completar manual)
-- Skip on pre-req fail: snob falha por falta de smith 5 NÃO trava a vila — pula pro próximo item do template
-- Tolerância a erro: vila quebrada loga e segue
+### 1. WORLD_MODE no topo
+```js
+const WORLD_MODE = 'br142';  // 'br142' | 'speed'
+```
+- `br142`: farm 21CL+1Spy via LA, build só recursos. Painel verde NÃO aparece, loops recruit/research/coin/snob/attack retornam cedo.
+- `speed`: tudo como na v0.8.1 (preservado integralmente).
 
-### Coin Minter + Snob Trainer (v0.6 → v0.7.5)
-- Cunha 1 moeda/vila/passada em todas
-- Treina nobre quando tem moedas+pop suficientes
-- Roles OFF/NOBLE introduzidos e depois simplificados pra UNIVERSAL (todas vilas iguais)
-- Mix tropa: 100% heavy (decisão do user)
+### 2. CFG.attackUnits configurável no painel
+- Default `{light: 21, spy: 1}` (mínimo 81 pop em BR142).
+- Inputs editáveis no painel: "Pacote: __ CL + __ Spy".
+- Aplicado em todas chamadas: `farmLoop`, `mapScanFarmAll`, dry-run, real-1, confirm dialog.
 
-### Template estrito (v0.7.6 → v0.7.7)
-- Decisão do user: parar de construir prédios desnecessários
-- TEMPLATE_UNIVERSAL atual constrói APENAS:
-  - main 3→20, recursos 5→25, farm 3→20, storage 3→25
-  - barracks 1 (pré-req smith)
-  - smith 1→20
-  - market 1→10 (pré-req academia)
-  - stable 1→10 (pra heavy recrutar)
-  - snob 1 (academia, max neste mundo)
-- NÃO constrói: garage, hide, wall, watchtower, statue, snob 2/3
-- Quando completar: "template concluído ✓" e para de tentar
+### 3. fetchLootAssistantStatus()
+- GET `/game.php?screen=am_farm&order=distance&dir=asc&Farm_page=0&Farm_per_page=1000`
+- Detecta por regex em `tr.innerHTML`: dots/green|yellow|red|grey + classes `report_y_yes/no/partial` + `status_green/yellow/red`
+- Retorna `{ villageId: 'full'|'partial'|'empty'|'unknown' }`
+- Caller (`mapScanFarmAll`) re-ordena por status então distância. Vazias são puladas.
 
-### Parser conservador (v0.7.8)
-- Bug: log `coin: erro` (literal 4 chars). Causa: regex `/error_box|recursos|.../i` casava com QUALQUER página (label "Recursos" no topo) e fallback retornava 'erro'
-- Fix: só erro se achar explicitamente `<div class="error_box">`
-- Aplicado em 4 funções (mint/snob/recruit/build)
-- Cunhagem agora compara coinsBefore vs coinsAfter pra detectar sucesso real
+### 4. Painel unificado arrastável
+- Wrapper `position:fixed` com top/left vindos de `localStorage['twFarmPanelPos']`.
+- Header `cursor:move` + mousedown/move/up handlers no document (continua trackeando se cursor sair).
+- Botão minimizar (➖/➕) salva estado em `localStorage['twFarmPanelCollapsed']`.
+- Em br142: adiciona seção "🏗 Build Recursos" com botões Start/Stop/1×.
 
-### Contador de Tropas (v0.7.9 + v0.8.1)
-- Botão `📊 Tropas` → GET `overview_villages?mode=units` → agregado por unidade
-- v0.7.9 buggy: "162 vilas, 0 tropas" (tabela com em casa + em comando + em apoio = 3 linhas por vila + header sem class)
-- v0.8.1 fix: agregação multi-linha + fallback PT-BR no header (Lanceiro/Espadachim/Cavalaria pesada/Nobre)
-- HTML salvo em `window.TW_BUILD_TROOPS_RAW_HTML` pra debug se ainda falhar
-- Display abreviado PT-BR: L (lança), E (espada), M (machado), A (arq), spy, CL (cav leve), AC (arq mont), CP (paladino), AR (ariete), CT (cat), PAL (paladino), NB (nobre)
+### 5. TEMPLATE_RESOURCES_ONLY
+```js
+const TEMPLATE_RESOURCES_ONLY = (() => {
+    const tpl = [];
+    for (let lvl = 1; lvl <= 30; lvl++) {
+        tpl.push(['wood', lvl]);
+        tpl.push(['stone', lvl]);
+        tpl.push(['iron', lvl]);
+    }
+    return tpl;
+})();
+```
+- 90 entradas, intercalado por nível (wood1, stone1, iron1, wood2, stone2, iron2, ...).
+- Distribui produção uniformemente em vez de zerar um recurso só.
+- buildLoopB só constrói quando há recursos → sem armazém no template, só sobe conforme acumula.
 
-### Ataques de conquista (v0.8.0)
-- Bloco vermelho no painel: `🎯 Conquistar Jogador`
-- `fetchPlayerByNameB`: busca em `/map/player.txt`
-- `fetchVillagesOfPlayerB`: busca em `/map/village.txt` filtrando por player_id
-- `planConquestB`: pra cada vila do alvo (ordenada por pontos asc), escolhe 4 nossas vilas mais próximas com NT+CP disponível. Track de nobres alocados por vila.
-- `executeConquestPlanB`: dispara em loop, rate limit 25/min, pausa 2-3s, auto-stop em captcha ou 5 erros sem sucesso
-- **2 confirmações obrigatórias** (alert + prompt nome exato) pra evitar Op DST 2.0
-- Comp default: 1 NT + 500 CP + 0 spy
+### 6. API global cross-IIFE
+Em modo br142, o IIFE B expõe:
+- `window.TW_BUILD_start()` → inicia buildLoopB. Retorna true se iniciou, false se já rodava.
+- `window.TW_BUILD_stop()` → para o loop.
+- `window.TW_BUILD_once()` → roda 1 ciclo manual em todas as vilas.
+- `window.TW_BUILD_status()` → `{ running, cycles, lastCycleAt }`.
+
+Painel farm faz poll a cada 3s pra atualizar status.
 
 ## Pendências (próxima sessão)
 
-### Imediato — VALIDAR v0.8.1
-1. Atualizar TM pra v0.8.1 (cache GitHub ~5min OU manual via Bloco de Notas)
-2. Clicar `📊 Tropas` — esperar: ~100 vilas, totais > 0 (CP, spy, NB)
-3. Se ainda 0: F12 console → `TW_BUILD_TROOPS_RAW_HTML.slice(0,3000)` → mandar pro Claude pra calibrar pelo DOM real do brs1
+### Imediato — VALIDAR v0.9.0 em produção
 
-### Próximo — DISPARAR ATAQUES
-1. `📋 Planejar Ataque` → digitar "Luis Fuerza" (jogador alvo declarado)
-2. Validar plano no alert (X vilas alvo, Y ataques, recursos)
-3. Confirmar (digitar nome exato no prompt)
-4. Observar log + stop button visível
-5. Conferir em `/game.php?screen=overview_villages&mode=commands` que os ataques saíram
+1. Atualizar Tampermonkey pra v0.9.0 (cache GitHub ~5min OU manual via Bloco de Notas)
+2. Abrir vila BR142. Banner deve dizer "v0.9.0 ATIVO — modo: BR142".
+3. **Drag**: arrastar painel pelo header. Recarregar página — deve voltar na posição salva.
+4. **Minimizar**: clicar ➖, conteúdo some, ícone vira ➕. F5 — estado preservado.
+5. **Pacote**: campo "Pacote: 21CL + 1Spy". Editável.
+6. **Farm via LA**:
+   - Clicar 🔍 Buscar Barbs (raio configurável).
+   - Clicar 💥 ATACAR TODOS. Confirm deve mostrar "Pacote: 21CL+1Spy (≥81 pop)" e "Prioridade: 🟢 cheias → 🟡 parciais → ⚪ desconhecidas".
+   - Log deve aparecer "LA status: 🟢 X cheias · 🟡 Y parciais · ⚪ Z desconhecidas · 🔴 W vazias".
+   - Cada envio loga com ícone correspondente.
+7. **Build Recursos**:
+   - Seção "🏗 Build Recursos" deve aparecer (só em br142).
+   - Clicar ▶ Build. Status muda pra "rodando".
+   - Log do build aparece no console (F12). Não há painel verde com log visual.
+   - Verificar via overview do jogo se filas de construção começaram a aparecer com wood/stone/iron.
 
-### v0.9 (roadmap — discutir antes de codar)
-- Ataques SIMULTÂNEOS com chegada coordenada ±1s
-- Usa `Timing.getCurrentServerTime()` (nativo do jogo, sem skew)
-- Cálculo reverso: "pra chegar às 23:00:00, vila X dispara às 22:25:00"
-- Velocidade pela unidade mais lenta da comp (lição Op DST)
-- Pre-flight checks rígidos antes de cada salva
-- Comp homogênea validada (vila tem NT+CP+escolta exata?)
+### Se der problema com Loot Assistant
+- Pode acontecer dos seletores não baterem (HTML do LA varia entre mundos/versões).
+- Sintoma: "LA status: 🟢 0 · 🟡 0 · ⚪ N · 🔴 0" (tudo unknown) ou erro `tabela não encontrada`.
+- Fix: F12 → ir em `/game.php?screen=am_farm` → Inspecionar 1 linha da tabela → mandar HTML pro Claude calibrar seletor.
 
-## Armadilhas registradas (não cair de novo)
+### Se travar build (sem armazém)
+- Esperado em algum momento: wood 25+ exige >94k armazém. Build vai falhar com "sem recursos" perpetuamente.
+- Decisão na hora: **liberar warehouse** no template? Ou cap em wood/stone/iron 24?
+- Mudança simples: adicionar `['storage', 25]` em posição estratégica do TEMPLATE_RESOURCES_ONLY.
 
-1. **`@version` na linha 4 não tem "v"** — Edit replace_all `v0.7.X → v0.7.Y` NÃO pega a linha 4 (`// @version      0.7.X`). Sempre Edit específico pra essa linha.
-2. **Cache CDN `raw.githubusercontent.com`** TTL ~5min. Tampermonkey "Verificar atualizações" pode receber versão velha do cache. Workaround: caminho manual (Bloco de Notas → Ctrl+A/C → cola no editor do TM).
-3. **Tampermonkey "Acesso ao site = Ao clicar"** em Chrome MV3 silencia tudo. Fix obrigatório: chrome://extensions → TM → Detalhes → "Em todos os sites".
-4. **Inputs do painel resetam no F5** — auto-resync mitiga mas se zerado preencher manual antes.
-5. **game_data.villages** pode trazer só algumas vilas (3 de 100 no brs1) — fallback `overview_villages?mode=combined` é confiável.
-6. **Parser de erro genérico** mata tudo. SEMPRE usar match explícito de `<div class="error_box">...</div>`.
-7. **Tabela `overview_villages?mode=units`** tem múltiplas linhas por vila (em casa + em comando + em apoio). Sempre agregar por villageId.
+### Roadmap (futuro)
+- **Voltar pra brs1 ou novo mundo speed**: trocar `WORLD_MODE = 'speed'` → tudo volta (build/recruit/research/coin/snob/ataques).
+- **v0.9.1**: ajustar template de recursos se precisar warehouse ou cap diferente.
+- **v0.9.2** (BR142 maduro): adicionar tagger de relatórios + auto-detecção de saque máximo retornado pra calibrar pacote.
+- **v1.0 (futuro mundo speed)**: ataques SIMULTÂNEOS coordenados (chegada ±1s) — backlog do brs1.
+
+## Armadilhas registradas
+
+1. **`@version` na linha 4 não tem "v"** — Edit replace_all `v0.X.Y → v0.Z.W` NÃO pega `// @version      0.X.Y`. Edit específico pra essa linha.
+2. **Cache CDN `raw.githubusercontent.com`** TTL ~5min. Workaround: cola manual pelo Bloco de Notas.
+3. **Tampermonkey "Acesso ao site = Ao clicar"** em Chrome MV3 silencia tudo. Fix: chrome://extensions → TM → Detalhes → "Em todos os sites".
+4. **Inputs do painel resetam no F5** — auto-resync mitiga. Pacote default vem do CFG (21/1) — usuário pode editar.
+5. **game_data.villages** pode trazer só algumas vilas — fallback `overview_villages?mode=combined`.
+6. **Parser de erro genérico** mata tudo. SEMPRE match explícito de `<div class="error_box">`.
+7. **NOVO v0.9**: cross-IIFE — painel farm e buildRecruitModule são closures separados. Comunicação via `window.TW_BUILD_*`. Se startar build mas API não existir ainda, mostra alert "ainda inicializando".
 
 ## Como retomar em nova sessão
 

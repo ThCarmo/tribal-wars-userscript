@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         TW Farm + Build + Recruit — ThCarmo
 // @namespace    https://github.com/ThCarmo/tribal-wars-userscript
-// @version      0.8.1
-// @description  Farm (2L+1S, raio configurável) + Build Queue (multi-vila) + Recruit + Incoming Tagger
+// @version      0.9.0
+// @description  Painel unificado arrastável. Modo BR142: farm 21CL+1Spy (≥81pop) com prioridade Loot Assistant + Build só recursos. Modo SPEED preserva tudo.
 // @author       Thiago Carmo
 // @match        *://*.tribalwars.com.br/*
 // @match        *://*.tribalwars.com.pt/*
@@ -17,7 +17,7 @@
 // Tampermonkey 5.5 stable ignora @inject-into page. Workaround clássico:
 // criar um <script> tag com o código real, anexar ao DOM, o browser executa
 // no MAIN WORLD (mesmo contexto que o DevTools console). Funciona em qualquer TM.
-console.log('[TW-FARM] stub carregado v0.8.1 — injetando main world script');
+console.log('[TW-FARM] stub carregado v0.9.0 — injetando main world script');
 (function injectMainWorldScript() {
     function mainWorldScript() {
         'use strict';
@@ -32,7 +32,7 @@ console.log('[TW-FARM] stub carregado v0.8.1 — injetando main world script');
             const b = document.createElement('div');
             b.id = 'tw-farm-banner-prova';
             b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#d40000;color:#fff;padding:12px;font:bold 14px Arial;text-align:center;border-bottom:3px solid #000;box-shadow:0 2px 10px rgba(0,0,0,0.6);';
-            b.innerHTML = `✅ TW Farm + Build + Research + Recruit v0.8.1 ATIVO — painéis: Farm à direita, Build/Research à esquerda <span style="margin-left:20px;cursor:pointer;text-decoration:underline;" id="tw-farm-banner-close">[fechar]</span>`;
+            b.innerHTML = `✅ TW v0.9.0 ATIVO — modo: <b>${WORLD_MODE.toUpperCase()}</b> — painel unificado arrastável <span style="margin-left:20px;cursor:pointer;text-decoration:underline;" id="tw-farm-banner-close">[fechar]</span>`;
             (document.body || document.documentElement).insertAdjacentElement('afterbegin', b);
             document.getElementById('tw-farm-banner-close').onclick = () => b.remove();
         };
@@ -41,16 +41,27 @@ console.log('[TW-FARM] stub carregado v0.8.1 — injetando main world script');
         } else {
             document.addEventListener('DOMContentLoaded', showBanner);
         }
-        console.log('[TW-FARM] v0.8.1 carregado (script-tag bridge, main world) em', location.href);
+        console.log('[TW-FARM] v0.9.0 carregado (script-tag bridge, main world) em', location.href);
     } catch (e) {
         console.error('[TW-FARM] banner-prova falhou:', e);
     }
+
+    // ===== WORLD MODE =====
+    // 'br142'  → mundo normal: farm 21CL+1Spy (≥81 pop), prioriza pelo Loot Assistant,
+    //             build SÓ recursos (wood/stone/iron até 30). Sem recruit/research/coin/snob/ataques.
+    // 'speed'  → mundo speed (brs1 etc): TUDO habilitado (farm light + build/recruit/
+    //             research/coin/snob/ataques). Templates universais OFF/NOBLE ativos.
+    // Trocar este valor pra alternar entre os modos. Painel se adapta sozinho.
+    const WORLD_MODE = 'br142';
 
     const CFG = {
         radiusMax: 35,
         cooldownMin: 30,
         jitterMs: [3000, 7000],
         template: 'A',
+        // Pacote de tropa por ataque (mudou em v0.9.0 — mundo 142 exige ≥81 pop por farm).
+        //  21 CL × 4 pop = 84 pop ≥ 81 ✓ ;  1 spy = 2 pop. Total 86 pop, 1 build, 5600 carga.
+        attackUnits: { light: 21, spy: 1 },
         debugLog: true,
         // min/campo — mundo 142 (confirmar com prints reais; ajustar se mundo mudar config)
         unitSpeed: {
@@ -269,8 +280,8 @@ console.log('[TW-FARM] stub carregado v0.8.1 — injetando main world script');
                 break;
             }
 
-            if (STATE.troopsAtHome.light < 2) {
-                STATE.lastError = `CL em casa: ${STATE.troopsAtHome.light} (precisa ≥2)`;
+            if (STATE.troopsAtHome.light < CFG.attackUnits.light) {
+                STATE.lastError = `CL em casa: ${STATE.troopsAtHome.light} (precisa ≥${CFG.attackUnits.light})`;
                 updatePanel('PARADO — CL esgotada. Aguardando retorno.');
                 STATE.running = false;
                 break;
@@ -310,8 +321,8 @@ console.log('[TW-FARM] stub carregado v0.8.1 — injetando main world script');
                 } else {
                     persistFarmRecord(next.id);
                     STATE.sent++;
-                    STATE.troopsAtHome.light -= 2;
-                    STATE.troopsAtHome.spy -= 1;
+                    STATE.troopsAtHome.light -= CFG.attackUnits.light;
+                    STATE.troopsAtHome.spy -= CFG.attackUnits.spy;
                     log(`Farm ${STATE.sent} enviado:`, STATE.nextTarget, 'estoque:', STATE.troopsAtHome);
                 }
             } catch (err) {
@@ -533,6 +544,86 @@ console.log('[TW-FARM] stub carregado v0.8.1 — injetando main world script');
         return barbs;
     }
 
+    // ============ LOOT ASSISTANT — status por barb (v0.9.0) ============
+    // Lê a tabela do Assistente de Saque do próprio jogo (/game.php?screen=am_farm)
+    // e extrai o status visual por aldeia:
+    //   🟢 full     — última volta retornou cheia (mais saque esperando)
+    //   🟡 partial  — última volta retornou parcial
+    //   🔴 empty    — última volta retornou vazia OU caveira (perdeu tropa)
+    //   ⚪ unknown  — nunca atacou OU não encontrado
+    //
+    // O LA pagina os resultados. Tentamos forçar &Sb_per_page=1000 pra trazer
+    // tudo de uma vez. Se o mundo não respeitar, ainda funciona com a página 1.
+    //
+    // Retorna: { '12345': 'full', '67890': 'partial', ... }  (key = village id)
+    // Em erro, retorna {} (todos viram 'unknown' lá no caller, fluxo continua).
+
+    async function fetchLootAssistantStatus() {
+        const map = {};
+        // Heurística de URL: força per_page alto pra trazer tudo numa request só.
+        // Em mundos onde o LA não respeita, ainda traz a primeira página (~30 linhas).
+        const url = '/game.php?screen=am_farm&order=distance&dir=asc&Farm_page=0&Farm_per_page=1000';
+        let html;
+        try {
+            const resp = await fetch(url, { credentials: 'same-origin' });
+            if (!resp.ok) {
+                log(`Loot Assistant: HTTP ${resp.status} em ${url}`);
+                return map;
+            }
+            html = await resp.text();
+        } catch (e) {
+            log('Loot Assistant: erro de rede:', e.message || e);
+            return map;
+        }
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+
+        // Tenta achar a tabela de saque. IDs/classes mudam entre versões do TW.
+        // Lista candidatos do mais específico pro mais genérico.
+        const table = doc.querySelector(
+            '#plunder_list, table.vis.plunder_list, table#scavenge_table, table.vis'
+        );
+        if (!table) {
+            log('Loot Assistant: tabela não encontrada (HTML inesperado, talvez LA não habilitado)');
+            return map;
+        }
+
+        const rows = table.querySelectorAll('tr');
+        let counted = 0;
+        rows.forEach(tr => {
+            // Tenta extrair o village id de várias formas:
+            //   1) data-id no <tr>
+            //   2) link href contendo target=NNN ou id=NNN
+            let id = tr.getAttribute('data-id') || tr.getAttribute('data-village-id');
+            if (!id) {
+                const link = tr.querySelector('a[href*="target="], a[href*="village="]');
+                if (link) {
+                    const m = link.getAttribute('href').match(/[?&](?:target|village)=(\d+)/);
+                    if (m) id = m[1];
+                }
+            }
+            if (!id) return;
+
+            // Detecta status pela presença de imagem/ícone dot.
+            //   imagens TW: dots/green.png, yellow.png, red.png, grey.png
+            //   ou classes: dot-img green / report_y_yes etc.
+            const html = tr.innerHTML;
+            let status = null;
+            if (/dots\/green|\bgreen\.png|status_green|report_y_yes/i.test(html)) status = 'full';
+            else if (/dots\/yellow|\byellow\.png|status_yellow|report_y_partial/i.test(html)) status = 'partial';
+            else if (/dots\/red|\bred\.png|status_red|report_y_no/i.test(html)) status = 'empty';
+            else if (/dots\/grey|dots\/gray|\bgrey\.png|\bgray\.png/i.test(html)) status = 'unknown';
+
+            if (status) {
+                map[String(id)] = status;
+                counted++;
+            }
+        });
+
+        log(`Loot Assistant: ${counted} barbs com status conhecido (de ${rows.length} linhas).`);
+        return map;
+    }
+
     // ============ ENVIO VIA PRAÇA DE REUNIÕES ============
     // Flow padrão TW:
     //   Step 1: GET screen=place&target=ID → HTML com form (CSRF token, hidden fields)
@@ -642,19 +733,22 @@ console.log('[TW-FARM] stub carregado v0.8.1 — injetando main world script');
     }
 
     // ============ ATACAR TODOS (loop em cima do scan) ============
-    // Itera barbáros do último scan, dispara 2L+1S em cada via sendFarmViaPlace().
-    // Reaproveita guard-rails do farm: cooldown, CL<2, captcha, erro do servidor.
+    // Itera barbáros do último scan, dispara CFG.attackUnits (21CL+1Spy em br142)
+    // em cada via sendFarmViaPlace().
+    // Em v0.9.0 enriquece a lista com status do Loot Assistant (🟢/🟡/⚪) e
+    // re-ordena: cheias por distância → parciais por distância → desconhecidas → vazias.
+    // Reaproveita guard-rails do farm: cooldown, estoque baixo, captcha, erro do servidor.
 
     async function mapScanFarmAll() {
-        const barbs = STATE.mapScanLast && STATE.mapScanLast.barbs;
-        if (!barbs || barbs.length === 0) {
+        const barbsOrig = STATE.mapScanLast && STATE.mapScanLast.barbs;
+        if (!barbsOrig || barbsOrig.length === 0) {
             STATE.mapScanProgress = 'rode 🔍 Buscar Barbs primeiro';
             updatePanel(null);
             return;
         }
 
         // Auto-resync: se inputs do painel estão zerados, tenta ler do jogo antes de barrar.
-        if (STATE.troopsAtHome.light < 2 || STATE.troopsAtHome.spy < 1) {
+        if (STATE.troopsAtHome.light < CFG.attackUnits.light || STATE.troopsAtHome.spy < CFG.attackUnits.spy) {
             log('Map farm: estoque zerado nos inputs, tentando syncTroopsAtHome()...');
             syncTroopsAtHome();
             const $l = document.getElementById('tw-farm-light');
@@ -662,16 +756,37 @@ console.log('[TW-FARM] stub carregado v0.8.1 — injetando main world script');
             if ($l) $l.value = STATE.troopsAtHome.light;
             if ($s) $s.value = STATE.troopsAtHome.spy;
         }
-        if (STATE.troopsAtHome.light < 2 || STATE.troopsAtHome.spy < 1) {
-            STATE.mapScanProgress = `estoque ${STATE.troopsAtHome.light}CL/${STATE.troopsAtHome.spy}spy < min(2,1). Preencha os campos manualmente e tente de novo.`;
+        if (STATE.troopsAtHome.light < CFG.attackUnits.light || STATE.troopsAtHome.spy < CFG.attackUnits.spy) {
+            STATE.mapScanProgress = `estoque ${STATE.troopsAtHome.light}CL/${STATE.troopsAtHome.spy}spy < min(${CFG.attackUnits.light},${CFG.attackUnits.spy}). Preencha os campos manualmente e tente de novo.`;
             updatePanel(STATE.mapScanProgress);
             log('Map farm abortado:', STATE.mapScanProgress);
             return;
         }
 
+        // ===== PRIORIZAÇÃO via Loot Assistant (v0.9.0) =====
+        // Lê o status de cada barb (cheia 🟢 / parcial 🟡 / desconhecida ⚪ / vazia 🔴)
+        // pelo Assistente de Saque do próprio jogo e reordena a lista de alvos.
+        STATE.mapScanProgress = 'consultando Loot Assistant pra priorizar alvos...';
+        updatePanel(STATE.mapScanProgress);
+        const laStatus = await fetchLootAssistantStatus().catch(e => {
+            log('Loot Assistant falhou:', e.message || e);
+            return {};
+        });
+        const PRIO = { full: 0, partial: 1, unknown: 2, empty: 3 };
+        const barbs = barbsOrig
+            .map(b => ({ ...b, laStatus: laStatus[String(b.id)] || 'unknown' }))
+            .sort((a, b) => {
+                const pa = PRIO[a.laStatus] ?? 2;
+                const pb = PRIO[b.laStatus] ?? 2;
+                if (pa !== pb) return pa - pb;
+                return a.dist - b.dist;  // empate → mais próximo
+            });
+        const laCounts = barbs.reduce((acc, b) => { acc[b.laStatus] = (acc[b.laStatus] || 0) + 1; return acc; }, {});
+        log(`LA status: 🟢 ${laCounts.full || 0} cheias · 🟡 ${laCounts.partial || 0} parciais · ⚪ ${laCounts.unknown || 0} desconhecidas · 🔴 ${laCounts.empty || 0} vazias`);
+
         STATE.mapScanRunning = true;
-        let attempted = 0, sent = 0, skippedCooldown = 0, errors = 0;
-        log(`Map farm: iniciando sobre ${barbs.length} alvos. Estoque: ${STATE.troopsAtHome.light}CL/${STATE.troopsAtHome.spy}spy`);
+        let attempted = 0, sent = 0, skippedCooldown = 0, skippedEmpty = 0, errors = 0;
+        log(`Map farm: iniciando sobre ${barbs.length} alvos. Estoque: ${STATE.troopsAtHome.light}CL/${STATE.troopsAtHome.spy}spy. Pacote: ${CFG.attackUnits.light}CL+${CFG.attackUnits.spy}Spy`);
 
         for (const b of barbs) {
             if (!STATE.mapScanRunning) {
@@ -683,7 +798,7 @@ console.log('[TW-FARM] stub carregado v0.8.1 — injetando main world script');
                 STATE.mapScanRunning = false;
                 break;
             }
-            if (STATE.troopsAtHome.light < 2 || STATE.troopsAtHome.spy < 1) {
+            if (STATE.troopsAtHome.light < CFG.attackUnits.light || STATE.troopsAtHome.spy < CFG.attackUnits.spy) {
                 STATE.lastError = `estoque baixo: ${STATE.troopsAtHome.light}CL / ${STATE.troopsAtHome.spy}spy`;
                 STATE.mapScanRunning = false;
                 break;
@@ -692,22 +807,28 @@ console.log('[TW-FARM] stub carregado v0.8.1 — injetando main world script');
                 skippedCooldown++;
                 continue;
             }
+            // Pula barbs marcadas como vazias no LA — desperdício mandar tropa
+            if (b.laStatus === 'empty') {
+                skippedEmpty++;
+                continue;
+            }
 
             attempted++;
-            STATE.nextTarget = `(${b.x}|${b.y}) ${b.dist.toFixed(1)}c`;
+            const laIcon = { full: '🟢', partial: '🟡', unknown: '⚪', empty: '🔴' }[b.laStatus] || '⚪';
+            STATE.nextTarget = `${laIcon} (${b.x}|${b.y}) ${b.dist.toFixed(1)}c`;
             STATE.mapScanProgress = `${sent} enviados / ${attempted} tentativas, alvo ${STATE.nextTarget}`;
             updatePanel(STATE.mapScanProgress);
 
-            const res = await sendFarmViaPlace(b.id, 2, 1, false);
+            const res = await sendFarmViaPlace(b.id, CFG.attackUnits.light, CFG.attackUnits.spy, false);
 
             if (res.ok) {
                 sent++;
                 STATE.sent++;
-                STATE.troopsAtHome.light -= 2;
-                STATE.troopsAtHome.spy -= 1;
+                STATE.troopsAtHome.light -= CFG.attackUnits.light;
+                STATE.troopsAtHome.spy -= CFG.attackUnits.spy;
                 STATE.lastFarmByTarget[b.id] = serverTime();
                 lsSet(LS_KEY, STATE.lastFarmByTarget);
-                log(`Map farm #${sent}: (${b.x}|${b.y}) ok, estoque ${STATE.troopsAtHome.light}CL/${STATE.troopsAtHome.spy}spy`);
+                log(`Map farm #${sent}: ${laIcon} (${b.x}|${b.y}) ok, estoque ${STATE.troopsAtHome.light}CL/${STATE.troopsAtHome.spy}spy`);
             } else {
                 errors++;
                 STATE.errors++;
@@ -729,18 +850,47 @@ console.log('[TW-FARM] stub carregado v0.8.1 — injetando main world script');
         }
 
         STATE.mapScanRunning = false;
-        STATE.mapScanProgress = `parado: ${sent} enviados, ${errors} erros, ${skippedCooldown} em cooldown. Razão: ${STATE.lastError || 'fim da lista'}`;
+        STATE.mapScanProgress = `parado: ${sent} enviados, ${errors} erros, ${skippedCooldown} em cooldown, ${skippedEmpty} vazias puladas. Razão: ${STATE.lastError || 'fim da lista'}`;
         updatePanel(STATE.mapScanProgress);
         log('Map farm finalizado:', STATE.mapScanProgress);
     }
 
     function injectPanel() {
         if (document.getElementById('tw-farm-panel')) return;
+
+        // Posição salva (drag). Default canto sup direito, à 10px da borda.
+        const savedPos = lsGet('twFarmPanelPos', null);
+        const initLeft = savedPos && Number.isFinite(savedPos.left) ? savedPos.left : Math.max(0, window.innerWidth - 290);
+        const initTop  = savedPos && Number.isFinite(savedPos.top)  ? savedPos.top  : 120;
+        const savedCollapsed = lsGet('twFarmPanelCollapsed', false);
+
         const panel = document.createElement('div');
         panel.id = 'tw-farm-panel';
+        panel.style.cssText = `position:fixed;top:${initTop}px;left:${initLeft}px;z-index:99999;background:#f4e4bc;border:2px solid #603000;font-family:Verdana,Arial;font-size:11px;width:270px;box-shadow:2px 2px 8px rgba(0,0,0,0.4);border-radius:3px;`;
+
+        const modeBadge = WORLD_MODE === 'br142'
+            ? '<span style="background:#1f5d1f;color:#fff;padding:1px 5px;border-radius:2px;font-size:9px;">BR142</span>'
+            : '<span style="background:#5d1f7a;color:#fff;padding:1px 5px;border-radius:2px;font-size:9px;">SPEED</span>';
+
+        // Bloco Build Recursos — só aparece em modo br142.
+        const buildSection = WORLD_MODE === 'br142' ? `
+  <hr style="border:none;border-top:1px solid #603000;margin:8px 0 6px;">
+  <div style="font-weight:bold;color:#603000;margin-bottom:3px;">🏗 Build Recursos (wood/stone/iron 1→30)</div>
+  <div style="display:flex;gap:4px;margin-bottom:4px;">
+    <button id="tw-bld-r-start" style="flex:1;background:#1f7a1f;color:white;border:none;padding:5px;cursor:pointer;font-weight:bold;border-radius:2px;">▶ Build</button>
+    <button id="tw-bld-r-stop" style="flex:1;background:#7a1f1f;color:white;border:none;padding:5px;cursor:pointer;font-weight:bold;border-radius:2px;">■ Stop</button>
+    <button id="tw-bld-r-once" style="flex:1;background:#444;color:white;border:none;padding:5px;cursor:pointer;font-size:10px;border-radius:2px;">▷ 1×</button>
+  </div>
+  <div style="font-size:10px;">Status: <span id="tw-bld-r-status">parado</span> · Ciclos: <span id="tw-bld-r-cycles">0</span></div>
+  <div style="font-size:9px;color:#888;">Constrói só quando há recursos disponíveis. Sem armazém/granja/ferreiro.</div>
+` : '';
+
         panel.innerHTML = `
-<div style="position:fixed;top:120px;right:10px;z-index:99999;background:#f4e4bc;border:2px solid #603000;padding:8px;font-family:Verdana,Arial;font-size:11px;width:260px;box-shadow:2px 2px 8px rgba(0,0,0,0.4);border-radius:3px;">
-  <div style="font-weight:bold;border-bottom:1px solid #603000;margin-bottom:6px;color:#603000;">TW Farm + Tagger — ThCarmo v0.2</div>
+<div id="tw-farm-header" style="cursor:move;background:#603000;color:#fff;padding:6px 8px;display:flex;align-items:center;gap:6px;border-radius:1px;user-select:none;">
+  <span style="font-weight:bold;flex:1;">⚔ TW v0.9.0 ${modeBadge}</span>
+  <button id="tw-farm-min" title="minimizar" style="background:#a07000;color:#fff;border:none;width:22px;height:18px;cursor:pointer;font-size:11px;border-radius:2px;line-height:1;">${savedCollapsed ? '➕' : '➖'}</button>
+</div>
+<div id="tw-farm-body" style="padding:8px;${savedCollapsed ? 'display:none;' : ''}">
 
   <div style="font-weight:bold;color:#603000;margin-bottom:3px;">⚔ Farm</div>
   <div style="display:flex;gap:4px;margin-bottom:4px;">
@@ -763,6 +913,11 @@ console.log('[TW-FARM] stub carregado v0.8.1 — injetando main world script');
     Jitter ms: <input id="tw-farm-jmin" type="number" value="${CFG.jitterMs[0]}" min="200" max="60000" style="width:54px;font-size:10px;"/>
     – <input id="tw-farm-jmax" type="number" value="${CFG.jitterMs[1]}" min="200" max="60000" style="width:54px;font-size:10px;"/>
   </div>
+  <div style="margin-top:3px;font-size:10px;color:#603000;">
+    Pacote: <input id="tw-farm-pkg-light" type="number" value="${CFG.attackUnits.light}" min="1" max="200" style="width:42px;font-size:10px;"/>CL +
+    <input id="tw-farm-pkg-spy" type="number" value="${CFG.attackUnits.spy}" min="0" max="50" style="width:42px;font-size:10px;"/>Spy
+    <span style="color:#888;font-size:9px;">(≥81 pop em BR142)</span>
+  </div>
   <div style="font-size:9px;color:#888;">Último erro: <span id="tw-farm-lasterr">-</span></div>
 
   <hr style="border:none;border-top:1px solid #603000;margin:8px 0 6px;">
@@ -780,8 +935,8 @@ console.log('[TW-FARM] stub carregado v0.8.1 — injetando main world script');
     <button id="tw-map-stop-all" style="flex:1;background:#444;color:white;border:none;padding:5px;cursor:pointer;font-weight:bold;border-radius:2px;">■ PARAR</button>
   </div>
   <div style="font-size:10px;">Status: <span id="tw-map-status">ocioso</span></div>
-  <div style="font-size:9px;color:#888;">Atacar Todos itera sobre o scan, 2L+1S em cada, jitter 3-7s, para em CL&lt;2 / captcha / erro.</div>
-
+  <div style="font-size:9px;color:#888;">Prioriza 🟢 cheias → 🟡 parciais → ⚪ desconhecidas (🔴 vazias puladas) via Loot Assistant. Para em estoque baixo / captcha / 5 erros.</div>
+${buildSection}
   <hr style="border:none;border-top:1px solid #603000;margin:8px 0 6px;">
 
   <div style="font-weight:bold;color:#603000;margin-bottom:3px;">🛡 Incoming Tagger</div>
@@ -793,7 +948,92 @@ console.log('[TW-FARM] stub carregado v0.8.1 — injetando main world script');
 </div>`;
         document.body.appendChild(panel);
 
-        document.getElementById('tw-farm-start').onclick = () => {
+        // ===== Drag handlers (v0.9.0) =====
+        // Mousedown no header → captura offset, mousemove anexado ao document
+        // pra continuar tracking mesmo se cursor sair do painel, mouseup solta.
+        // Posição final persiste em localStorage.
+        (function setupDrag() {
+            const header = document.getElementById('tw-farm-header');
+            if (!header) return;
+            let dragging = false, offX = 0, offY = 0;
+            header.addEventListener('mousedown', (ev) => {
+                // ignora clique no botão minimizar
+                if (ev.target.id === 'tw-farm-min') return;
+                dragging = true;
+                const rect = panel.getBoundingClientRect();
+                offX = ev.clientX - rect.left;
+                offY = ev.clientY - rect.top;
+                ev.preventDefault();
+            });
+            document.addEventListener('mousemove', (ev) => {
+                if (!dragging) return;
+                const newLeft = Math.max(0, Math.min(window.innerWidth - 50, ev.clientX - offX));
+                const newTop  = Math.max(0, Math.min(window.innerHeight - 30, ev.clientY - offY));
+                panel.style.left = newLeft + 'px';
+                panel.style.top  = newTop + 'px';
+                // limpa o "right" antigo (style cssText pode tê-lo)
+                panel.style.right = 'auto';
+            });
+            document.addEventListener('mouseup', () => {
+                if (!dragging) return;
+                dragging = false;
+                const rect = panel.getBoundingClientRect();
+                lsSet('twFarmPanelPos', { left: Math.round(rect.left), top: Math.round(rect.top) });
+            });
+        })();
+
+        // ===== Minimize handler =====
+        document.getElementById('tw-farm-min').onclick = () => {
+            const body = document.getElementById('tw-farm-body');
+            const btn = document.getElementById('tw-farm-min');
+            const isHidden = body.style.display === 'none';
+            body.style.display = isHidden ? 'block' : 'none';
+            btn.textContent = isHidden ? '➖' : '➕';
+            lsSet('twFarmPanelCollapsed', !isHidden);
+        };
+
+        // ===== Build Recursos handlers (só em br142) =====
+        if (WORLD_MODE === 'br142') {
+            const $bldStart = document.getElementById('tw-bld-r-start');
+            const $bldStop  = document.getElementById('tw-bld-r-stop');
+            const $bldOnce  = document.getElementById('tw-bld-r-once');
+            const $bldStatus = document.getElementById('tw-bld-r-status');
+            const $bldCycles = document.getElementById('tw-bld-r-cycles');
+
+            const refreshBuildStatus = () => {
+                if (!w.TW_BUILD_status) return;
+                const s = w.TW_BUILD_status();
+                if ($bldStatus) $bldStatus.textContent = s.running ? 'rodando' : 'parado';
+                if ($bldCycles) $bldCycles.textContent = s.cycles || 0;
+            };
+            // Poll a cada 3s pra refletir status do build loop B.
+            setInterval(refreshBuildStatus, 3000);
+
+            $bldStart.onclick = async () => {
+                if (!w.TW_BUILD_start) {
+                    alert('Módulo build ainda inicializando. Tente em 2s.');
+                    return;
+                }
+                const started = w.TW_BUILD_start();
+                $bldStatus.textContent = started ? 'rodando' : 'já estava rodando';
+            };
+            $bldStop.onclick = () => {
+                if (w.TW_BUILD_stop) w.TW_BUILD_stop();
+                $bldStatus.textContent = 'parando...';
+            };
+            $bldOnce.onclick = async () => {
+                if (!w.TW_BUILD_once) {
+                    alert('Módulo build ainda inicializando. Tente em 2s.');
+                    return;
+                }
+                $bldStatus.textContent = 'rodando 1 ciclo...';
+                await w.TW_BUILD_once();
+                $bldStatus.textContent = 'ciclo único concluído';
+                refreshBuildStatus();
+            };
+        }
+
+        function applyPanelCfg() {
             CFG.radiusMax = parseInt(document.getElementById('tw-farm-radius').value, 10) || 35;
             CFG.cooldownMin = parseInt(document.getElementById('tw-farm-cd').value, 10) || 30;
             const jmin = parseInt(document.getElementById('tw-farm-jmin').value, 10) || 3000;
@@ -801,6 +1041,13 @@ console.log('[TW-FARM] stub carregado v0.8.1 — injetando main world script');
             CFG.jitterMs = [Math.min(jmin, jmax), Math.max(jmin, jmax)];
             STATE.troopsAtHome.light = parseInt(document.getElementById('tw-farm-light').value, 10) || 0;
             STATE.troopsAtHome.spy = parseInt(document.getElementById('tw-farm-spy').value, 10) || 0;
+            const pkgL = parseInt(document.getElementById('tw-farm-pkg-light').value, 10);
+            const pkgS = parseInt(document.getElementById('tw-farm-pkg-spy').value, 10);
+            if (Number.isFinite(pkgL) && pkgL > 0) CFG.attackUnits.light = pkgL;
+            if (Number.isFinite(pkgS) && pkgS >= 0) CFG.attackUnits.spy = pkgS;
+        }
+        document.getElementById('tw-farm-start').onclick = () => {
+            applyPanelCfg();
             STATE.running = true;
             farmLoop();
         };
@@ -834,7 +1081,7 @@ console.log('[TW-FARM] stub carregado v0.8.1 — injetando main world script');
             }
             const t = barbs[0];
             document.getElementById('tw-map-status').textContent = `dry-run em (${t.x}|${t.y}) id ${t.id}...`;
-            const res = await sendFarmViaPlace(t.id, 2, 1, true);
+            const res = await sendFarmViaPlace(t.id, CFG.attackUnits.light, CFG.attackUnits.spy, true);
             console.log('%c[TW-FARM] DRY-RUN resultado:', 'color:#a07000;font-weight:bold', res);
             if (res.ok) {
                 document.getElementById('tw-map-status').textContent = `dry-run ok. body em window.TW_FARM_LAST_DRYRUN`;
@@ -854,24 +1101,23 @@ console.log('[TW-FARM] stub carregado v0.8.1 — injetando main world script');
                 document.getElementById('tw-map-status').textContent = 'rode 🔍 Buscar Barbs primeiro';
                 return;
             }
-            // Aplica configs atuais do painel
-            CFG.radiusMax = parseInt(document.getElementById('tw-farm-radius').value, 10) || 35;
-            CFG.cooldownMin = parseInt(document.getElementById('tw-farm-cd').value, 10) || 30;
-            const jmin = parseInt(document.getElementById('tw-farm-jmin').value, 10) || 3000;
-            const jmax = parseInt(document.getElementById('tw-farm-jmax').value, 10) || 7000;
-            CFG.jitterMs = [Math.min(jmin, jmax), Math.max(jmin, jmax)];
-            STATE.troopsAtHome.light = parseInt(document.getElementById('tw-farm-light').value, 10) || 0;
-            STATE.troopsAtHome.spy = parseInt(document.getElementById('tw-farm-spy').value, 10) || 0;
+            // Aplica configs atuais do painel (raio, cooldown, jitter, estoque, pacote)
+            applyPanelCfg();
 
-            const maxAtaques = Math.floor(Math.min(STATE.troopsAtHome.light / 2, STATE.troopsAtHome.spy));
+            const maxAtaques = Math.floor(Math.min(
+                STATE.troopsAtHome.light / CFG.attackUnits.light,
+                STATE.troopsAtHome.spy / CFG.attackUnits.spy
+            ));
             const confirmAll = window.confirm(
                 `ATACAR TODOS:\n\n` +
                 `${barbs.length} barbáros no scan (raio ${STATE.mapScanLast.atRadius})\n` +
                 `Estoque: ${STATE.troopsAtHome.light}CL / ${STATE.troopsAtHome.spy}spy\n` +
+                `Pacote por ataque: ${CFG.attackUnits.light}CL + ${CFG.attackUnits.spy}Spy (≥81 pop)\n` +
                 `Máx ataques possíveis: ${maxAtaques}\n` +
+                `Prioridade: 🟢 cheias → 🟡 parciais → ⚪ desconhecidas (🔴 vazias puladas)\n` +
                 `Jitter: ${CFG.jitterMs[0]}-${CFG.jitterMs[1]}ms\n` +
                 `Cooldown: ${CFG.cooldownMin}min\n\n` +
-                `Para em CL<2, captcha, ou 5 erros sem 1 sucesso. Confirma?`
+                `Para em estoque baixo, captcha, ou 5 erros sem 1 sucesso. Confirma?`
             );
             if (!confirmAll) {
                 document.getElementById('tw-map-status').textContent = 'cancelado pelo operador';
@@ -890,22 +1136,23 @@ console.log('[TW-FARM] stub carregado v0.8.1 — injetando main world script');
                 document.getElementById('tw-map-status').textContent = 'rode o Buscar Barbs primeiro';
                 return;
             }
-            if (STATE.troopsAtHome.light < 2) {
-                document.getElementById('tw-map-status').textContent = `precisa 2 CL em casa (tem ${STATE.troopsAtHome.light}). Use RESYNC ou ajuste manual.`;
+            if (STATE.troopsAtHome.light < CFG.attackUnits.light || STATE.troopsAtHome.spy < CFG.attackUnits.spy) {
+                document.getElementById('tw-map-status').textContent = `precisa ${CFG.attackUnits.light}CL+${CFG.attackUnits.spy}Spy em casa (tem ${STATE.troopsAtHome.light}CL/${STATE.troopsAtHome.spy}Spy). Use RESYNC ou ajuste manual.`;
                 return;
             }
             const t = barbs[0];
-            const confirm1 = window.confirm(`ATAQUE REAL: 2L+1S → (${t.x}|${t.y}) [${t.name}], dist ${t.dist.toFixed(1)}c. Confirma?`);
+            const pkg = `${CFG.attackUnits.light}L+${CFG.attackUnits.spy}S`;
+            const confirm1 = window.confirm(`ATAQUE REAL: ${pkg} → (${t.x}|${t.y}) [${t.name}], dist ${t.dist.toFixed(1)}c. Confirma?`);
             if (!confirm1) {
                 document.getElementById('tw-map-status').textContent = 'cancelado pelo operador';
                 return;
             }
-            document.getElementById('tw-map-status').textContent = `enviando 2L+1S → (${t.x}|${t.y})...`;
-            const res = await sendFarmViaPlace(t.id, 2, 1, false);
+            document.getElementById('tw-map-status').textContent = `enviando ${pkg} → (${t.x}|${t.y})...`;
+            const res = await sendFarmViaPlace(t.id, CFG.attackUnits.light, CFG.attackUnits.spy, false);
             console.log('%c[TW-FARM] REAL resultado:', 'color:#7a1f1f;font-weight:bold', res);
             if (res.ok) {
-                STATE.troopsAtHome.light -= 2;
-                STATE.troopsAtHome.spy -= 1;
+                STATE.troopsAtHome.light -= CFG.attackUnits.light;
+                STATE.troopsAtHome.spy -= CFG.attackUnits.spy;
                 STATE.lastFarmByTarget[t.id] = serverTime();
                 lsSet(LS_KEY, STATE.lastFarmByTarget);
                 document.getElementById('tw-map-status').textContent = `ataque enviado em (${t.x}|${t.y}). Confira no Comandos do jogo.`;
@@ -1093,6 +1340,24 @@ console.log('[TW-FARM] stub carregado v0.8.1 — injetando main world script');
             ['snob', 1],
             // FIM — não constrói mais nada. Coin + Snob + Recruit continuam.
         ];
+
+        // ============ TEMPLATE RESOURCES ONLY (v0.9.0 — modo BR142) ============
+        // Decisão do user (mundo 142): subir SÓ wood/stone/iron até nível máximo.
+        // Sem warehouse, sem granja, sem ferreiro, sem nada. O loop build só
+        // dispara quando há recursos disponíveis na vila — então o jogador farma,
+        // recursos acumulam, build sobe um nível, repete.
+        //
+        // Intercalado por nível (wood1, stone1, iron1, wood2, stone2, iron2...)
+        // pra distribuir produção uniformemente em vez de zerar 1 recurso só.
+        const TEMPLATE_RESOURCES_ONLY = (() => {
+            const tpl = [];
+            for (let lvl = 1; lvl <= 30; lvl++) {
+                tpl.push(['wood', lvl]);
+                tpl.push(['stone', lvl]);
+                tpl.push(['iron', lvl]);
+            }
+            return tpl;  // 90 entradas
+        })();
 
         // Mix universal: HEAVY PURO. Não desperdiça pop com nada mais.
         const MIX_UNIVERSAL = { heavy: 1.0 };
@@ -1463,6 +1728,10 @@ console.log('[TW-FARM] stub carregado v0.8.1 — injetando main world script');
         }
 
         async function executeConquestPlanB(plan) {
+            if (WORLD_MODE !== 'speed') {
+                logB('Ataques de conquista DESATIVADOS em modo ' + WORLD_MODE + '.');
+                return;
+            }
             BSTATE.attackRunning = true;
             let sent = 0, errors = 0;
             const startMs = Date.now();
@@ -2176,6 +2445,11 @@ console.log('[TW-FARM] stub carregado v0.8.1 — injetando main world script');
         }
 
         async function recruitLoopB() {
+            if (WORLD_MODE !== 'speed') {
+                logB('Recruit DESATIVADO em modo ' + WORLD_MODE + ' (só recursos).');
+                BSTATE.recruitRunning = false;
+                return;
+            }
             logB(`Recruit loop iniciado. Mix OFF=${JSON.stringify(BSTATE.mixes.OFF)} | NOBLE=${JSON.stringify(BSTATE.mixes.NOBLE)}`);
             while (BSTATE.recruitRunning) {
                 const villages = await getAllVillagesB();
@@ -2328,6 +2602,11 @@ console.log('[TW-FARM] stub carregado v0.8.1 — injetando main world script');
         }
 
         async function researchLoopB() {
+            if (WORLD_MODE !== 'speed') {
+                logB('Research DESATIVADO em modo ' + WORLD_MODE + '.');
+                BSTATE.researchRunning = false;
+                return;
+            }
             logB('Research loop iniciado');
             while (BSTATE.researchRunning) {
                 const villages = await getAllVillagesB();
@@ -2469,6 +2748,11 @@ console.log('[TW-FARM] stub carregado v0.8.1 — injetando main world script');
         }
 
         async function coinLoopB() {
+            if (WORLD_MODE !== 'speed') {
+                logB('Coin DESATIVADO em modo ' + WORLD_MODE + '.');
+                BSTATE.coinRunning = false;
+                return;
+            }
             logB('Coin loop iniciado');
             while (BSTATE.coinRunning) {
                 const villages = await getAllVillagesB();
@@ -2566,6 +2850,11 @@ console.log('[TW-FARM] stub carregado v0.8.1 — injetando main world script');
         }
 
         async function snobLoopB() {
+            if (WORLD_MODE !== 'speed') {
+                logB('Snob DESATIVADO em modo ' + WORLD_MODE + '.');
+                BSTATE.snobRunning = false;
+                return;
+            }
             logB('Snob loop iniciado');
             while (BSTATE.snobRunning) {
                 const villages = await getAllVillagesB();
@@ -3173,11 +3462,60 @@ console.log('[TW-FARM] stub carregado v0.8.1 — injetando main world script');
         }
 
         async function initB() {
-            console.log('[TW-BUILD] init() v0.5.0 — URL:', location.href);
+            console.log('[TW-BUILD] init() v0.9.0 — URL:', location.href, 'WORLD_MODE:', WORLD_MODE);
+
+            // Em modo br142: sobrescreve templates pra construir SÓ recursos.
+            // Sem painel verde — quem comanda é o painel farm laranja via
+            // window.TW_BUILD_start/stop/once expostos abaixo.
+            if (WORLD_MODE === 'br142') {
+                BSTATE.templates.OFF = TEMPLATE_RESOURCES_ONLY;
+                BSTATE.templates.NOBLE = TEMPLATE_RESOURCES_ONLY;
+                console.log('[TW-BUILD] modo BR142: template = SÓ recursos (wood/stone/iron 1..30).');
+
+                // API global pro painel farm acionar o build loop.
+                wB.TW_BUILD_start = () => {
+                    if (BSTATE.buildRunning) return false;
+                    BSTATE.buildRunning = true;
+                    buildLoopB();
+                    return true;
+                };
+                wB.TW_BUILD_stop = () => {
+                    BSTATE.buildRunning = false;
+                };
+                wB.TW_BUILD_once = async () => {
+                    const villages = await getAllVillagesB();
+                    let done = 0;
+                    for (const v of villages) {
+                        try { await processVillageBuildB(v); }
+                        catch (e) { console.warn('[TW-BUILD] vila', v.name, 'erro:', e.message); }
+                        done++;
+                        await sleepB(jitterB(BCFG.perVillagePauseMs));
+                    }
+                    console.log('[TW-BUILD] ciclo único concluído em', done, 'vilas.');
+                };
+                wB.TW_BUILD_status = () => ({
+                    running: BSTATE.buildRunning,
+                    cycles: BSTATE.cycleCount,
+                    lastCycleAt: BSTATE.lastCycleAt,
+                });
+
+                // Aguarda game_data + popula cache de vilas em background.
+                const start = Date.now();
+                while (Date.now() - start < 8000 && !getGameDataB()) {
+                    await sleepB(200);
+                }
+                const gd = getGameDataB();
+                if (gd) {
+                    const villages = await getAllVillagesB(true);
+                    console.log(`[TW-BUILD] BR142 pronto. World: ${gd.world}, Vilas: ${villages.length}. Use ▶ Build no painel.`);
+                }
+                return;
+            }
+
+            // ===== Modo speed: comportamento original (painel verde grande) =====
             try { injectPanelB(); }
             catch (e) { console.error('[TW-BUILD] painel falhou:', e); return; }
 
-            // Espera game_data ficar pronto (o farm já espera, mas garante)
             const start = Date.now();
             while (Date.now() - start < 8000 && !getGameDataB()) {
                 await sleepB(200);
@@ -3195,7 +3533,6 @@ console.log('[TW-FARM] stub carregado v0.8.1 — injetando main world script');
                 }, 1000);
                 return;
             }
-            // Dispara descoberta de vilas imediatamente (popula cache + UI)
             const villages = await getAllVillagesB(true);
             logB(`Carregado. World: ${gd.world}, Player: ${gd.player?.name}, Vilas: ${villages.length}`);
             updateVillagesPanelB();
